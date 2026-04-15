@@ -1,4 +1,3 @@
---// SERVICES
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -6,13 +5,11 @@ local TweenService = game:GetService("TweenService")
 
 local player = Players.LocalPlayer
 
---// НАСТРОЙКИ (БЕЗОПАСНЫЕ ДЛЯ МИРА ДЕНДИ)
 _G.NormalSpeed = 28
 _G.GuiLocked = false 
 local verticalDir = 0
 local platform = nil
 
---// ЗВУКОВАЯ СИСТЕМА
 local function playClick()
     local s = Instance.new("Sound", player:WaitForChild("PlayerGui"))
     s.SoundId = "rbxassetid://552900451"
@@ -21,7 +18,6 @@ local function playClick()
     game:GetService("Debris"):AddItem(s, 1)
 end
 
---// 1. HIGHLIGHT ESP
 local function applyESP(v)
     if v:IsA("Model") and v ~= player.Character and v:FindFirstChild("Humanoid") then
         if not Players:GetPlayerFromCharacter(v) then
@@ -37,7 +33,6 @@ local function applyESP(v)
     end
 end
 
---// 2. GUI С ЦЕНТРАЛЬНОЙ АНИМАЦИЕЙ
 local function CreateUI()
     local pg = player:WaitForChild("PlayerGui", 10)
     if not pg or pg:FindFirstChild("DandyAntiKickUI") then return end
@@ -90,16 +85,16 @@ local function CreateUI()
         return frame, b
     end
 
-    local openCont, openBtn = makeBtn(sg, "ОТКРЫТЬ", nil)
+    local openCont, openBtn = makeBtn(sg, "OPEN", nil)
     openCont.Visible = false; openCont.Position = currentPos
 
     local menu = Instance.new("Frame", sg)
     menu.Size = UDim2.new(0, 70, 0, 260); menu.Position = currentPos; menu.BackgroundTransparency = 1
 
-    local closeCont, closeBtn = makeBtn(menu, "ЗАКР.", nil, 35)
+    local closeCont, closeBtn = makeBtn(menu, "CLOSE", nil, 35)
     closeBtn.BackgroundColor3 = Color3.fromRGB(120, 30, 30)
 
-    local lockCont, lockBtn = makeBtn(menu, "ЗАКРЕП.", nil, 35)
+    local lockCont, lockBtn = makeBtn(menu, "LOCK", nil, 35)
     lockCont.Position = UDim2.new(0,0,0,40)
 
     local upCont, upBtn = makeBtn(menu, nil, "rbxassetid://84178930837014")
@@ -110,7 +105,7 @@ local function CreateUI()
 
     lockBtn.MouseButton1Click:Connect(function()
         _G.GuiLocked = not _G.GuiLocked
-        lockBtn.TextLabel.Text = _G.GuiLocked and "ОТКРЕП." or "ЗАКРЕП."
+        lockBtn.TextLabel.Text = _G.GuiLocked and "UNLOCK" or "LOCK"
         lockBtn.UIStroke.Color = _G.GuiLocked and Color3.fromRGB(255, 50, 50) or Color3.new(0, 0, 0)
     end)
 
@@ -148,21 +143,16 @@ local function CreateUI()
     downBtn.InputEnded:Connect(function() verticalDir = 0 end)
 end
 
---// 3. БЕЗОПАСНАЯ ПЛАТФОРМА (ОБХОД ANTI-FLY)
 RunService.Heartbeat:Connect(function()
     pcall(function()
         local char = player.Character
         local root = char and char:FindFirstChild("HumanoidRootPart")
         local hum = char and char:FindFirstChild("Humanoid")
-
         if root and hum then
             hum.WalkSpeed = _G.NormalSpeed
-            
-            -- Сбрасываем состояние падения, чтобы античит думал, что мы на земле
             if hum:GetState() == Enum.HumanoidStateType.Freefall then
                 hum:ChangeState(Enum.HumanoidStateType.Landed)
             end
-
             if not platform or not platform.Parent then
                 platform = Instance.new("Part")
                 platform.Name = "Floor_Surface"
@@ -172,14 +162,9 @@ RunService.Heartbeat:Connect(function()
                 platform.Material = Enum.Material.Plastic
                 platform.Parent = workspace
             end
-            
-            -- Платформа теперь ДЕРЖИТ ноги персонажа (3.05 вместо 3.5)
-            -- Это создает эффект плотного контакта с поверхностью
             local currentY = platform.Position.Y
             local targetY = currentY + (verticalDir * 0.6)
             platform.CFrame = CFrame.new(root.Position.X, targetY, root.Position.Z)
-            
-            -- Если мы слишком далеко от платформы, подтягиваем её
             if (root.Position.Y - platform.Position.Y) > 4 then
                 platform.Position = root.Position - Vector3.new(0, 3.05, 0)
             end
@@ -187,7 +172,6 @@ RunService.Heartbeat:Connect(function()
     end)
 end)
 
---// 4. ЗАПУСК
 task.spawn(function()
     while true do
         pcall(CreateUI)
