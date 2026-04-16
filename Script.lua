@@ -8,21 +8,6 @@ _G.GuiLocked = false
 local vDir = 0
 local plat = nil
 
-local function applyESP()
-    for _, v in pairs(workspace:GetDescendants()) do
-        if v:IsA("Model") and v:FindFirstChild("Humanoid") and v ~= lp.Character then
-            if not game.Players:GetPlayerFromCharacter(v) then
-                if not v:FindFirstChild("ForceHighlight") then
-                    local hl = Instance.new("Highlight", v)
-                    hl.Name = "ForceHighlight"
-                    hl.FillColor = Color3.fromRGB(255, 0, 0)
-                    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-                end
-            end
-        end
-    end
-end
-
 local function ManagePlatform()
     local char = lp.Character
     if not char or not char:FindFirstChild("HumanoidRootPart") then return end
@@ -41,7 +26,8 @@ local function ManagePlatform()
     end
 
     local currentPos = plat.Position
-    local newY = currentPos.Y + (vDir * 1.0)
+    local antiSleep = math.sin(tick() * 10) * 0.0001
+    local newY = currentPos.Y + (vDir * 1.0) + antiSleep
     
     if (hrp.Position - currentPos).Magnitude > 15 then
         plat.CFrame = hrp.CFrame * CFrame.new(0, -3.5, 0)
@@ -49,14 +35,12 @@ local function ManagePlatform()
         plat.CFrame = CFrame.new(hrp.Position.X, newY, hrp.Position.Z)
     end
 
-    -- ФИКС NOCLIP: Принудительно держим игрока над платформой
-    if hum and hum.MoveDirection.Magnitude > 0 or vDir ~= 0 then
-        -- Если мы двигаемся или летим вверх/вниз
-    else
-        -- Если стоим на месте, фиксируем высоту над платформой
-        if (hrp.Position.Y - plat.Position.Y) < 4 then
+    -- НОВЫЙ ФИКС: Удерживаем высоту без блокировки движения сквозь стены
+    if vDir == 0 then
+        local dist = hrp.Position.Y - plat.Position.Y
+        if dist < 3.6 and dist > 3.0 then
+            -- Просто убираем гравитацию для игрока, когда он на платформе
             hrp.Velocity = Vector3.new(hrp.Velocity.X, 0, hrp.Velocity.Z)
-            hrp.CFrame = CFrame.new(hrp.Position.X, plat.Position.Y + 3.5, hrp.Position.Z)
         end
     end
 end
@@ -164,7 +148,6 @@ end)
 task.spawn(function()
     while true do
         pcall(CreateUI)
-        pcall(applyESP)
         task.wait(2)
     end
 end)
