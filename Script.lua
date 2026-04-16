@@ -27,6 +27,7 @@ local function ManagePlatform()
     local char = lp.Character
     if not char or not char:FindFirstChild("HumanoidRootPart") then return end
     local hrp = char.HumanoidRootPart
+    local hum = char:FindFirstChildOfClass("Humanoid")
 
     if not plat or not plat.Parent then
         plat = Instance.new("Part")
@@ -35,7 +36,7 @@ local function ManagePlatform()
         plat.Anchored = true
         plat.CanCollide = true
         plat.Transparency = 0.5
-        plat.Color = Color3.fromRGB(100, 100, 100) -- Теперь серая
+        plat.Color = Color3.fromRGB(100, 100, 100)
         plat.Parent = workspace.CurrentCamera 
     end
 
@@ -46,6 +47,17 @@ local function ManagePlatform()
         plat.CFrame = hrp.CFrame * CFrame.new(0, -3.5, 0)
     else
         plat.CFrame = CFrame.new(hrp.Position.X, newY, hrp.Position.Z)
+    end
+
+    -- ФИКС NOCLIP: Принудительно держим игрока над платформой
+    if hum and hum.MoveDirection.Magnitude > 0 or vDir ~= 0 then
+        -- Если мы двигаемся или летим вверх/вниз
+    else
+        -- Если стоим на месте, фиксируем высоту над платформой
+        if (hrp.Position.Y - plat.Position.Y) < 4 then
+            hrp.Velocity = Vector3.new(hrp.Velocity.X, 0, hrp.Velocity.Z)
+            hrp.CFrame = CFrame.new(hrp.Position.X, plat.Position.Y + 3.5, hrp.Position.Z)
+        end
     end
 end
 
@@ -156,3 +168,4 @@ task.spawn(function()
         task.wait(2)
     end
 end)
+
