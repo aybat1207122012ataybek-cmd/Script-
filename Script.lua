@@ -28,20 +28,18 @@ local function GetStarborn()
 end
 local starbornFont = GetStarborn()
 
--- Функция звука
+-- Функции интерфейса
 local function PlayClick()
     local s = Instance.new("Sound", game.Workspace)
     s.SoundId = "rbxassetid://552900451"; s.Volume = 0.5
     s:Play(); s.Ended:Connect(function() s:Destroy() end)
 end
 
--- Функция анимации нажатия
 local function AnimatePress(obj, shrink)
     local targetSize = shrink and UDim2.new(0.9, 0, 0.9, 0) or UDim2.new(1, 0, 1, 0)
     TS:Create(obj, TweenInfo.new(0.1), {Size = targetSize}):Play()
 end
 
--- Функция перетаскивания
 local function MakeDraggable(uiObj, dragTarget)
     local dragging, dragStart, startPos
     uiObj.InputBegan:Connect(function(input)
@@ -73,26 +71,26 @@ local function ManagePlatform()
     else
         plat.CFrame = CFrame.new(hrp.Position.X, newPos, hrp.Position.Z)
     end
-    if vDir == 0 and (hrp.Position.Y - plat.Position.Y) < 3.6 then
-        hrp.Velocity = Vector3.new(hrp.Velocity.X, 0, hrp.Velocity.Z)
-    end
 end
 
 -- === ОСНОВНОЙ GUI ===
 local function CreateUI()
     local pg = lp:WaitForChild("PlayerGui", 20)
-    if pg:FindFirstChild("DandyV12") then return end
+    if pg:FindFirstChild("DandyV12_Fixed") then return end
 
-    local sg = Instance.new("ScreenGui", pg); sg.Name = "DandyV12"; sg.ResetOnSpawn = false
+    local sg = Instance.new("ScreenGui", pg); sg.Name = "DandyV12_Fixed"; sg.ResetOnSpawn = false
     local menu = Instance.new("Frame", sg)
     menu.Size = UDim2.new(0, 80, 0, 320); menu.Position = UDim2.new(0.05, 0, 0.3, 0); menu.BackgroundTransparency = 1
 
-    local openFrame = Instance.new("Frame", sg)
-    openFrame.Size = UDim2.new(0, 70, 0, 70); openFrame.Position = UDim2.new(0.05, 0, 0.3, 0); openFrame.BackgroundTransparency = 1; openFrame.Visible = false
+    local scriptSelector = Instance.new("Frame", sg)
+    scriptSelector.Size = UDim2.new(0, 135, 0, 145); scriptSelector.Visible = false
+    scriptSelector.BackgroundColor3 = Color3.fromRGB(30, 30, 30); scriptSelector.BackgroundTransparency = 0.2
+    Instance.new("UICorner", scriptSelector)
+    local selectorStroke = Instance.new("UIStroke", scriptSelector); selectorStroke.Color = Color3.new(0,0,0); selectorStroke.Thickness = 3
 
     local function makeBtn(parent, txt, img, sizeY, pos)
         local frame = Instance.new("Frame", parent)
-        frame.Size = UDim2.new(0, 75, 0, sizeY); frame.Position = pos or UDim2.new(0,0,0,0); frame.BackgroundTransparency = 1
+        frame.Size = UDim2.new(0, (parent == menu or parent.Name == "OpenCont") and 75 or 125, 0, sizeY); frame.Position = pos or UDim2.new(0,0,0,0); frame.BackgroundTransparency = 1
         
         local bgImg = Instance.new("ImageLabel", frame)
         bgImg.Size = UDim2.new(1, 0, 1, 0); bgImg.Image = "rbxassetid://114452497059751"; bgImg.BackgroundTransparency = 1; bgImg.ZIndex = 1
@@ -103,9 +101,7 @@ local function CreateUI()
         b.BackgroundTransparency = 0.3; b.BackgroundColor3 = Color3.fromRGB(35, 35, 35); b.ZIndex = 2
         if img then b.Image = "rbxassetid://" .. img end
         Instance.new("UICorner", b).CornerRadius = UDim.new(0, 10)
-        
-        -- СПОКОЙНАЯ ТЕМНАЯ ОБВОДКА
-        local s = Instance.new("UIStroke", b); s.Thickness = 2; s.Color = Color3.fromRGB(20, 20, 20)
+        local s = Instance.new("UIStroke", b); s.Thickness = 2.5; s.Color = Color3.fromRGB(20, 20, 20)
 
         if txt then
             local t = Instance.new("TextLabel", b)
@@ -126,48 +122,63 @@ local function CreateUI()
         return b
     end
 
-    local openBtn = makeBtn(openFrame, "OPEN", nil, 70)
-    local closeBtn = makeBtn(menu, "CLOSE", nil, 30, UDim2.new(0,0,0,0))
-    local lockBtn = makeBtn(menu, "FIXED", nil, 30, UDim2.new(0,0,0,35))
-    local scriptBtn = makeBtn(menu, "SCRIPT", nil, 40, UDim2.new(0,0,0,70))
-    local upBtn = makeBtn(menu, nil, "100779215956277", 65, UDim2.new(0,0,0,115))
-    local downBtn = makeBtn(menu, nil, "88901857737780", 65, UDim2.new(0,0,0,185))
+    -- УМЕНЬШЕННАЯ КНОПКА ОТКРЫТИЯ
+    local openFrame = Instance.new("Frame", sg); openFrame.Name = "OpenCont"
+    openFrame.Size = UDim2.new(0, 50, 0, 50); openFrame.Position = UDim2.new(0.05, 0, 0.3, 0); openFrame.BackgroundTransparency = 1; openFrame.Visible = false
+    local openBtn = makeBtn(openFrame, "OPEN", nil, 50)
 
-    MakeDraggable(upBtn, menu); MakeDraggable(downBtn, menu); MakeDraggable(lockBtn, menu); MakeDraggable(openBtn, openFrame)
+    local closeBtn = makeBtn(menu, "CLOSE", nil, 32, UDim2.new(0,0,0,0))
+    local lockBtn = makeBtn(menu, "FIXED", nil, 32, UDim2.new(0,0,0,38))
+    local scriptMainBtn = makeBtn(menu, "SCRIPT", nil, 45, UDim2.new(0,0,0,76))
+    local upBtn = makeBtn(menu, nil, "100779215956277", 65, UDim2.new(0,0,0,128))
+    local downBtn = makeBtn(menu, nil, "88901857737780", 65, UDim2.new(0,0,0,200))
 
-    -- НОВАЯ ССЫЛКА НА ТВОЙ СКРИПТ
-    scriptBtn.MouseButton1Click:Connect(function()
-        pcall(function() loadstring(game:HttpGet("https://raw.githubusercontent.com/bookworming/bookshelf/refs/heads/main/shelf%203/boxten%20sex%20gui.lua"))() end)
+    local btnNox = makeBtn(scriptSelector, "NOXIOUS", nil, 38, UDim2.new(0,5,0,8))
+    local btnRid = makeBtn(scriptSelector, "RIDDANCE", nil, 38, UDim2.new(0,5,0,53))
+    local btnGobby = makeBtn(scriptSelector, "GOBBY", nil, 38, UDim2.new(0,5,0,98))
+
+    MakeDraggable(closeBtn, menu); MakeDraggable(lockBtn, menu); MakeDraggable(scriptMainBtn, menu); MakeDraggable(openBtn, openFrame)
+
+    scriptMainBtn.MouseButton1Click:Connect(function()
+        scriptSelector.Visible = not scriptSelector.Visible
+        scriptSelector.Position = UDim2.new(menu.Position.X.Scale, menu.Position.X.Offset + 85, menu.Position.Y.Scale, menu.Position.Y.Offset + 75)
     end)
 
-    closeBtn.MouseButton1Click:Connect(function() menu.Visible = false; openFrame.Visible = true; openFrame.Position = menu.Position end)
+    -- Кнопки загрузки
+    btnNox.MouseButton1Click:Connect(function() 
+        pcall(function() loadstring(game:HttpGet("https://raw.githubusercontent.com/bookworming/bookshelf/refs/heads/main/shelf%203/boxten%20sex%20gui.lua"))() end)
+        scriptSelector.Visible = false 
+    end)
+    
+    btnRid.MouseButton1Click:Connect(function() 
+        scriptSelector.Visible = false
+        task.wait(0.5) -- Задержка для стабильности Riddance
+        pcall(function() loadstring(game:HttpGet("https://raw.githubusercontent.com/riddance-club/script/refs/heads/main/loader.lua"))() end)
+    end)
+
+    btnGobby.MouseButton1Click:Connect(function() 
+        pcall(function() loadstring(game:HttpGet("https://pastebin.com/raw/FBRnb7S7"))() end)
+        scriptSelector.Visible = false 
+    end)
+
+    closeBtn.MouseButton1Click:Connect(function() menu.Visible = false; openFrame.Visible = true; scriptSelector.Visible = false; openFrame.Position = menu.Position end)
     openBtn.MouseButton1Click:Connect(function() menu.Visible = true; openFrame.Visible = false; menu.Position = openFrame.Position end)
     
     lockBtn.MouseButton1Click:Connect(function()
         _G.GuiLocked = not _G.GuiLocked
         lockBtn.TextLabel.Text = _G.GuiLocked and "UNFIX" or "FIXED"
-        -- ТЕМНО-КРАСНЫЙ ЦВЕТ ПРИ ЗАКРЕПЕ
-        lockBtn.BackgroundColor3 = _G.GuiLocked and Color3.fromRGB(100, 0, 0) or Color3.fromRGB(35, 35, 35)
+        lockBtn.BackgroundColor3 = _G.GuiLocked and Color3.fromRGB(120, 0, 0) or Color3.fromRGB(35, 35, 35)
     end)
 
-    upBtn.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then vDir = 1 end end)
+    upBtn.InputBegan:Connect(function(i) if i.UserInputType.Name:find("Mouse") or i.UserInputType.Name:find("Touch") then vDir = 1 end end)
     upBtn.InputEnded:Connect(function() vDir = 0 end)
-    downBtn.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then vDir = -1 end end)
+    downBtn.InputBegan:Connect(function(i) if i.UserInputType.Name:find("Mouse") or i.UserInputType.Name:find("Touch") then vDir = -1 end end)
     downBtn.InputEnded:Connect(function() vDir = 0 end)
 end
 
--- === ЦИКЛ ОБНОВЛЕНИЯ ===
 RS.Heartbeat:Connect(function()
     pcall(ManagePlatform)
-    if lp.Character and lp.Character:FindFirstChild("Humanoid") then 
-        lp.Character.Humanoid.WalkSpeed = _G.NormalSpeed 
-    end
+    if lp.Character and lp.Character:FindFirstChild("Humanoid") then lp.Character.Humanoid.WalkSpeed = _G.NormalSpeed end
 end)
-
-task.spawn(function()
-    while true do
-        pcall(CreateUI)
-        task.wait(2)
-    end
-end)
+task.spawn(function() while true do pcall(CreateUI); task.wait(2) end end)
 
