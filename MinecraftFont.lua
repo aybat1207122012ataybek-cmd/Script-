@@ -1,4 +1,3 @@
-
 local HttpService = game:GetService("HttpService")
 local fontFile = "MinecraftRUS.ttf"
 
@@ -61,5 +60,4 @@ game.DescendantAdded:Connect(function(v)
     pcall(apply, v)
 end)
 
-print("хей... спасибо что юзаешь мой скрипт я рад этому <3")
-
+print("[AYBAT] - здравствуй ну как тебе мой скрипт? крутой не правда ли? шрифт из майнкрафта")
