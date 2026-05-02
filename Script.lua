@@ -1,130 +1,227 @@
 -- ╔══════════════════════════════════════════════╗
--- ║         DANDY PLATFORM GUI  v3.8             ║
+-- ║         DANDY PLATFORM GUI  v4.5             ║
 -- ║              by @AYBAT_ATAYBEK               ║
 -- ╚══════════════════════════════════════════════╝
 
 if not game:IsLoaded() then game.Loaded:Wait() end
 
-local Players  = game:GetService("Players")
-local RS       = game:GetService("RunService")
-local UIS      = game:GetService("UserInputService")
-local SP       = game:GetService("SoundService")
-local Debris   = game:GetService("Debris")
-local TweenS   = game:GetService("TweenService")
-local lp       = Players.LocalPlayer
+-- ══════════════════════════════════════════
+--  КОНСОЛЬ-ПРИВЕТСТВИЕ
+-- ══════════════════════════════════════════
+local function PrintWelcome()
+    print([[
+[AYBAT]-
+                    ,,                     ,,                
+                    ,,                   ,,"                 
+                    ,,^                ,,,,                  
+                    ,,,              ^,,,,                   
+                    ,,,;           :,,,,:                    
+                   ,,,,,          ,,,,,,                     
+                   ,,,,,,      ,,,,,,,,                      
+                   ,,,",,,,,,,,,,,  ,,,                      
+  ,,"              ,,,  ",,,,,,,,;  ,,,"                     
+    ,,,           ;,,, :,,,,,,,,,,,,,,,,,,;                  
+      ,,,,        ,,,,,,,,,,!    :,,,,,,,,,,,,,,,,,,,,,,,,,,,
+       ,,,,,,,,:,,,,,,,,             ",,,: ",:,,,,,,,,,      
+         ,,,,,,,,,,,,,:               :,,,, ,,,,,            
+           ,,,,  :,,,                   ,,,,,,"              
+            ,,,, ,,,:                   ,,,,,,               
+             ;,,,,,,                     ,,,,,,              
+              :,,,,,                     ,,,,,,,             
+               ,,,,,,                   ",,, ,,,,            
+              ,,,:,,,!                  ,,,:  :,,,"          
+           ,,,,,, ",,,"               ^,,,,,,,,,,,,,         
+     ,,,,,,,,,,,:, :,,,,             ,,,,,,,,,,,,,,,,,       
+,,,,,,,,,,,,,,,,,,,,,,,,,,,:"   ,",,,,,,,,,       ^,,,,:     
+                  !,,,,,,,,,,,,,,,,,,; ,,,            ,,,    
+                     :,,,  !,",,,,,," :,,,               ,,  
+                      ,,,  ,,,,,,,,,,,",,"                   
+                      ,,,,,,,,      ,,,,,^                   
+                     ,,,,,,          ,,,,                    
+                    ,,,,,I           ,,,,                    
+                   :,,,"              ,,,                    
+                  ",,"                ",,                    
+                 ,,:                   ,,                    
+                ,"                     ,,                    
+                                       ;,                    
+]])
+    print("[AYBAT]- хей удачного вождение моим скриптом!(*^^*)")
+end
 
+PrintWelcome()
+
+-- ══════════════════════════════════════════
+--  КЭШ СТАНДАРТНОЙ БИБЛИОТЕКИ
+-- ══════════════════════════════════════════
+local mAbs   = math.abs
+local mClamp = math.clamp
+local mRound = math.round
+local sFmt   = string.format
+local sGsub  = string.gsub
+local sSub   = string.sub
+
+-- ══════════════════════════════════════════
+--  СЕРВИСЫ
+-- ══════════════════════════════════════════
+local Players = game:GetService("Players")
+local RS      = game:GetService("RunService")
+local UIS     = game:GetService("UserInputService")
+local SP      = game:GetService("SoundService")
+local Debris  = game:GetService("Debris")
+local TweenS  = game:GetService("TweenService")
+local lp      = Players.LocalPlayer
+
+-- ══════════════════════════════════════════
+--  СОСТОЯНИЯ
+-- ══════════════════════════════════════════
 _G.GuiLocked = false
 _G.PlatColor = Color3.fromRGB(163, 162, 165)
 
-local vDir, plat   = 0, nil
-local starbornFont = Font.fromEnum(Enum.Font.SourceSansBold)
+local vDir = 0
+local plat = nil
 
+-- ══════════════════════════════════════════
+--  ШРИФТ — AmaticSC Bold
+-- ══════════════════════════════════════════
+local mainFont = Font.new(
+    "rbxasset://fonts/families/AmaticSC.json",
+    Enum.FontWeight.Bold,
+    Enum.FontStyle.Normal
+)
+
+-- ══════════════════════════════════════════
+--  TWEEN КОНСТАНТЫ
+-- ══════════════════════════════════════════
+local tweenPress   = TweenInfo.new(0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local tweenRelease = TweenInfo.new(0.15, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+
+-- ══════════════════════════════════════════
+--  ЗВУК КЛИКА
+-- ══════════════════════════════════════════
 local function PlayClick()
     local s = Instance.new("Sound", SP)
     s.SoundId = "rbxassetid://552900451"
-    s.Volume  = 1
+    s.Volume  = 0.8
     s:Play()
     Debris:AddItem(s, 1)
 end
 
 -- ══════════════════════════════════════════
---  АНИМАЦИЯ КНОПКИ (сжатие по центру)
+--  АНИМАЦИЯ КНОПКИ
 -- ══════════════════════════════════════════
-local tweenInfo = TweenInfo.new(0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local DEBOUNCE = 0.12
 
 local function animBtn(btn)
     btn.AnchorPoint = Vector2.new(0.5, 0.5)
     btn.Position    = UDim2.new(0.5, 0, 0.5, 0)
 
+    local tweenDown = TweenS:Create(btn, tweenPress, {
+        BackgroundTransparency = 0.05,
+        Size = UDim2.new(0.84, 0, 0.84, 0),
+    })
+    local tweenUp = TweenS:Create(btn, tweenRelease, {
+        BackgroundTransparency = 0.4,
+        Size = UDim2.new(1, 0, 1, 0),
+    })
+
+    local pressing = false
+    local lastTime = 0
+
+    local function onPress()
+        local now = tick()
+        if pressing or (now - lastTime) < DEBOUNCE then return end
+        pressing = true
+        tweenUp:Cancel()
+        tweenDown:Play()
+    end
+
+    local function onRelease()
+        if not pressing then return end
+        pressing = false
+        lastTime = tick()
+        tweenDown:Cancel()
+        tweenUp:Play()
+    end
+
     btn.InputBegan:Connect(function(i)
         if i.UserInputType == Enum.UserInputType.MouseButton1
         or i.UserInputType == Enum.UserInputType.Touch then
-            TweenS:Create(btn, tweenInfo, {
-                BackgroundTransparency = 0.1,
-                Size = UDim2.new(0.88, 0, 0.88, 0)
-            }):Play()
+            onPress()
         end
     end)
     btn.InputEnded:Connect(function(i)
         if i.UserInputType == Enum.UserInputType.MouseButton1
         or i.UserInputType == Enum.UserInputType.Touch then
-            TweenS:Create(btn, tweenInfo, {
-                BackgroundTransparency = 0.4,
-                Size = UDim2.new(1, 0, 1, 0)
-            }):Play()
+            onRelease()
         end
     end)
+    btn.MouseLeave:Connect(onRelease)
 end
 
 -- ══════════════════════════════════════════
---  УВЕДОМЛЕНИЯ
+--  ПЛАТФОРМА
 -- ══════════════════════════════════════════
-local notifGui
+local lastRootY   = nil
+local platOffset  = -3.5
 
-local function notify(text, color)
-    if not notifGui then return end
-    color = color or Color3.fromRGB(255, 255, 255)
+local TELEPORT_DELTA = 8
+local PLAT_FOOT_OFF  = 3.5
 
-    local frame = Instance.new("Frame", notifGui)
-    frame.Size               = UDim2.new(0, 200, 0, 40)
-    frame.Position           = UDim2.new(0.5, -100, 1, 10)
-    frame.BackgroundColor3   = Color3.fromRGB(20, 20, 20)
-    frame.BackgroundTransparency = 0.2
-    frame.ZIndex             = 20
-    Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
-
-    local stroke = Instance.new("UIStroke", frame)
-    stroke.Color     = color
-    stroke.Thickness = 1.5
-
-    local label = Instance.new("TextLabel", frame)
-    label.Size                   = UDim2.new(1, 0, 1, 0)
-    label.BackgroundTransparency = 1
-    label.Text                   = text
-    label.TextColor3             = color
-    label.TextScaled             = true
-    label.FontFace               = starbornFont
-    label.ZIndex                 = 21
-
-    TweenS:Create(frame, TweenInfo.new(0.3, Enum.EasingStyle.Back), {
-        Position = UDim2.new(0.5, -100, 1, -55)
-    }):Play()
-
-    task.delay(2, function()
-        TweenS:Create(frame, TweenInfo.new(0.3, Enum.EasingStyle.Quad), {
-            Position           = UDim2.new(0.5, -100, 1, 10),
-            BackgroundTransparency = 1
-        }):Play()
-        task.wait(0.3)
-        frame:Destroy()
-    end)
-end
-
--- ══════════════════════════════════════════
---  ПЛАТФОРМА (оригинальная V62)
--- ══════════════════════════════════════════
 local function ManagePlatform()
     local char = lp.Character
-    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
-    local root = char.HumanoidRootPart
+    if not char then lastRootY = nil; return end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then lastRootY = nil; return end
 
-    if vDir ~= 0 or (plat and plat.Parent) then
-        if not plat or not plat.Parent then
-            plat = Instance.new("Part")
-            plat.Name         = "BasePart"
-            plat.Parent       = workspace
-            plat.Size         = Vector3.new(14, 1, 14)
-            plat.Anchored     = true
-            plat.CanCollide   = true
-            plat.Transparency = 0.5
-        end
-        plat.Color = _G.PlatColor
-        local targetY = plat.Position.Y + (vDir * 0.8)
-        if (root.Position.Y - targetY) > 5 then
-            targetY = root.Position.Y - 3.5
-        end
-        plat.CFrame = CFrame.new(root.Position.X, targetY, root.Position.Z)
+    local rootY = root.Position.Y
+
+    if vDir == 0 and (not plat or not plat.Parent) then
+        lastRootY = rootY
+        return
     end
+
+    if not plat or not plat.Parent then
+        plat              = Instance.new("Part")
+        plat.Name         = "BasePart"
+        plat.Parent       = workspace
+        plat.Size         = Vector3.new(14, 1, 14)
+        plat.Anchored     = true
+        plat.CanCollide   = true
+        plat.Transparency = 0.5
+        plat.CFrame = CFrame.new(
+            root.Position.X,
+            rootY - PLAT_FOOT_OFF,
+            root.Position.Z
+        )
+        platOffset = -PLAT_FOOT_OFF
+        lastRootY  = rootY
+        return
+    end
+
+    plat.Color = _G.PlatColor
+
+    local currentOffset = plat.Position.Y - rootY
+
+    if lastRootY and mAbs(rootY - lastRootY) > TELEPORT_DELTA then
+        plat.CFrame = CFrame.new(
+            root.Position.X,
+            rootY + platOffset,
+            root.Position.Z
+        )
+        lastRootY = rootY
+        return
+    end
+
+    platOffset = currentOffset
+    lastRootY  = rootY
+
+    local targetY = plat.Position.Y + (vDir * 0.8)
+
+    if (rootY - targetY) > 5 then
+        targetY = rootY - PLAT_FOOT_OFF
+    end
+
+    plat.CFrame = CFrame.new(root.Position.X, targetY, root.Position.Z)
 end
 
 -- ══════════════════════════════════════════
@@ -135,12 +232,11 @@ local function applyBg(obj)
     obj.BackgroundTransparency = 1
 
     local bgImg = Instance.new("ImageLabel", obj)
-    bgImg.Name                   = "MainBG"
     bgImg.Size                   = UDim2.new(1, 0, 1, 0)
     bgImg.Image                  = "rbxassetid://114452497059751"
     bgImg.BackgroundTransparency = 1
     bgImg.ZIndex                 = 1
-    Instance.new("UICorner", bgImg).CornerRadius = UDim.new(0, 8)
+    Instance.new("UICorner", bgImg).CornerRadius = UDim.new(0, 10)
 
     local s = Instance.new("UIStroke", obj)
     s.Thickness       = 2.2
@@ -148,12 +244,15 @@ local function applyBg(obj)
     s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
     s.LineJoinMode    = Enum.LineJoinMode.Round
 
-    Instance.new("UICorner", obj).CornerRadius = UDim.new(0, 8)
+    Instance.new("UICorner", obj).CornerRadius = UDim.new(0, 10)
 end
 
 local function makeBtn(parent, txt, img, sizeY, pos)
+    local isPanel = (parent.Name == "scriptPanel")
+    local w       = isPanel and 100 or 70
+
     local f = Instance.new("Frame", parent)
-    f.Size     = UDim2.new(0, (parent.Name ~= "scriptPanel") and 70 or 100, 0, sizeY)
+    f.Size     = UDim2.new(0, w, 0, sizeY)
     f.Position = pos or UDim2.new(0, 0, 0, 0)
     applyBg(f)
 
@@ -164,19 +263,23 @@ local function makeBtn(parent, txt, img, sizeY, pos)
     b.BackgroundTransparency = 0.4
     b.BackgroundColor3       = Color3.fromRGB(30, 30, 30)
     b.ZIndex                 = 2
-    Instance.new("UICorner", b).CornerRadius = UDim.new(0, 8)
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0, 10)
 
     if img then b.Image = "rbxassetid://" .. img end
+
     if txt then
         local t = Instance.new("TextLabel", b)
-        t.Size                   = UDim2.new(1, 0, 1, 0)
+        t.Size                   = UDim2.new(1, -4, 1, 0)
+        t.Position               = UDim2.new(0, 2, 0, 0)
         t.BackgroundTransparency = 1
         t.Text                   = txt
         t.TextColor3             = Color3.new(1, 1, 1)
         t.TextScaled             = true
         t.ZIndex                 = 3
-        t.FontFace               = starbornFont
+        t.FontFace               = mainFont
         t.Name                   = "TextLabel"
+        t.TextStrokeColor3       = Color3.new(0, 0, 0)
+        t.TextStrokeTransparency = 0.4
     end
 
     b.MouseButton1Click:Connect(PlayClick)
@@ -210,22 +313,23 @@ local function MakeDraggable(handle, target)
     end)
 
     handle.InputEnded:Connect(function() dragging = false end)
+    UIS.WindowFocusReleased:Connect(function() dragging = false end)
 end
 
 local function toHex(c)
-    return string.format("#%02X%02X%02X",
-        math.round(c.R * 255),
-        math.round(c.G * 255),
-        math.round(c.B * 255)
+    return sFmt("#%02X%02X%02X",
+        mRound(c.R * 255),
+        mRound(c.G * 255),
+        mRound(c.B * 255)
     )
 end
 
 local function fromHex(hex)
-    hex = hex:gsub("#", "")
+    hex = sGsub(hex, "#", "")
     if #hex ~= 6 then return nil end
-    local r = tonumber(hex:sub(1,2), 16)
-    local g = tonumber(hex:sub(3,4), 16)
-    local b = tonumber(hex:sub(5,6), 16)
+    local r = tonumber(sSub(hex, 1, 2), 16)
+    local g = tonumber(sSub(hex, 3, 4), 16)
+    local b = tonumber(sSub(hex, 5, 6), 16)
     if not r or not g or not b then return nil end
     return Color3.fromRGB(r, g, b)
 end
@@ -235,13 +339,12 @@ end
 -- ══════════════════════════════════════════
 local function CreateUI()
     local pg = lp:WaitForChild("PlayerGui", 20)
-    if pg:FindFirstChild("Dandy_V64_FinalFix") then return end
+    if pg:FindFirstChild("Dandy_V45") then return end
 
     local sg = Instance.new("ScreenGui", pg)
-    sg.Name         = "Dandy_V64_FinalFix"
+    sg.Name         = "Dandy_V45"
     sg.ResetOnSpawn = false
     sg.DisplayOrder = 999
-    notifGui = sg
 
     local menu = Instance.new("Frame", sg)
     menu.Size               = UDim2.new(0, 75, 0, 320)
@@ -267,12 +370,12 @@ local function CreateUI()
     colorPanel.Visible  = false
     applyBg(colorPanel)
 
-    local close = makeBtn(menu, "CLOSE",  nil,             30, UDim2.new(0,0,0,0))
-    local lock  = makeBtn(menu, "FIXED",  nil,             30, UDim2.new(0,0,0,35))
-    local scrB  = makeBtn(menu, "SCRIPT", nil,             40, UDim2.new(0,0,0,70))
-    local upB   = makeBtn(menu, nil, "100779215956277",    55, UDim2.new(0,0,0,115))
-    local dwB   = makeBtn(menu, nil, "88901857737780",     55, UDim2.new(0,0,0,175))
-    local open  = makeBtn(openCont, "OPEN", nil,           45)
+    local close = makeBtn(menu, "ЗАКРЫТЬ", nil,          30, UDim2.new(0,0,0,0))
+    local lock  = makeBtn(menu, "ФИКСИР.", nil,          30, UDim2.new(0,0,0,35))
+    local scrB  = makeBtn(menu, "СКРИПТ",  nil,          40, UDim2.new(0,0,0,70))
+    local upB   = makeBtn(menu, nil, "100779215956277",  55, UDim2.new(0,0,0,115))
+    local dwB   = makeBtn(menu, nil, "88901857737780",   55, UDim2.new(0,0,0,175))
+    local open  = makeBtn(openCont, "ОТКРЫТЬ", nil,      45)
 
     -- ══ COLOUR PICKER ══
     local pickerFrame = Instance.new("Frame", colorPanel)
@@ -282,7 +385,6 @@ local function CreateUI()
     pickerFrame.BorderSizePixel  = 0
     pickerFrame.ZIndex           = 5
     Instance.new("UICorner", pickerFrame).CornerRadius = UDim.new(0, 8)
-
     local pickerStroke = Instance.new("UIStroke", pickerFrame)
     pickerStroke.Color           = Color3.new(0, 0, 0)
     pickerStroke.Thickness       = 2.2
@@ -363,7 +465,7 @@ local function CreateUI()
     hexBox.Text                   = toHex(_G.PlatColor)
     hexBox.TextColor3             = Color3.new(1, 1, 1)
     hexBox.TextScaled             = true
-    hexBox.FontFace               = starbornFont
+    hexBox.FontFace               = mainFont
     hexBox.ZIndex                 = 5
     hexBox.ClearTextOnFocus       = false
     Instance.new("UICorner", hexBox).CornerRadius = UDim.new(0, 6)
@@ -386,10 +488,8 @@ local function CreateUI()
             pickerFrame.BackgroundColor3 = Color3.fromHSV(cH, 1, 1)
             pickDot.Position             = UDim2.new(cS, 0, 1 - cV, 0)
             hexBox.Text                  = toHex(col)
-            notify("Цвет изменён: " .. toHex(col), col)
         else
             hexBox.Text = toHex(_G.PlatColor)
-            notify("Неверный HEX код!", Color3.fromRGB(255, 80, 80))
         end
     end)
 
@@ -398,14 +498,15 @@ local function CreateUI()
         local function proc()
             local mp = UIS:GetMouseLocation() - obj.AbsolutePosition - Vector2.new(0, 36)
             func(
-                math.clamp(mp.X / obj.AbsoluteSize.X, 0, 1),
-                math.clamp(mp.Y / obj.AbsoluteSize.Y, 0, 1)
+                mClamp(mp.X / obj.AbsoluteSize.X, 0, 1),
+                mClamp(mp.Y / obj.AbsoluteSize.Y, 0, 1)
             )
         end
         obj.InputBegan:Connect(function(i)
             if i.UserInputType == Enum.UserInputType.MouseButton1
             or i.UserInputType == Enum.UserInputType.Touch then
-                active = true proc()
+                active = true
+                proc()
             end
         end)
         UIS.InputEnded:Connect(function(i)
@@ -415,23 +516,23 @@ local function CreateUI()
             end
         end)
         RS.RenderStepped:Connect(function()
-            if active and colorPanel.Visible then proc() updateColor() end
+            if active and colorPanel.Visible then
+                proc()
+                updateColor()
+            end
         end)
     end
 
     setupPicker(hueS,   function(x) cH = x end)
-    setupPicker(picker, function(x, y) cS = x cV = 1 - y end)
+    setupPicker(picker, function(x, y) cS = x; cV = 1 - y end)
 
+    -- ══ СКРИПТЫ ══
     local function addScr(t, p, url)
         makeBtn(scriptPanel, t, nil, 30, p).MouseButton1Click:Connect(function()
-            notify("Загрузка: " .. t .. "...", Color3.fromRGB(100, 200, 255))
             task.spawn(function()
-                local ok = pcall(function()
+                pcall(function()
                     loadstring(game:HttpGet(url))()
                 end)
-                if not ok then
-                    notify("Ошибка загрузки!", Color3.fromRGB(255, 80, 80))
-                end
             end)
         end)
     end
@@ -439,15 +540,14 @@ local function CreateUI()
     addScr("RIDDANCE", UDim2.new(0,10,0,45), "https://raw.githubusercontent.com/riddance-club/script/refs/heads/main/loader.lua")
     addScr("G0BBY",    UDim2.new(0,10,0,80), "https://pastebin.com/raw/FBRnb7S7")
 
-    makeBtn(scriptPanel, "COLORS", nil, 35, UDim2.new(0,10,0,145)).MouseButton1Click:Connect(function()
+    makeBtn(scriptPanel, "ЦВЕТА", nil, 35, UDim2.new(0,10,0,145)).MouseButton1Click:Connect(function()
         colorPanel.Visible = not colorPanel.Visible
     end)
 
-    makeBtn(colorPanel, "RESET", nil, 35, UDim2.new(0,10,0,55)).MouseButton1Click:Connect(function()
+    makeBtn(colorPanel, "СБРОС", nil, 35, UDim2.new(0,10,0,55)).MouseButton1Click:Connect(function()
         _G.PlatColor = Color3.fromRGB(163, 162, 165)
         cH, cS, cV  = Color3.toHSV(_G.PlatColor)
         updateColor()
-        notify("Цвет сброшен!", Color3.fromRGB(200, 200, 200))
     end)
 
     local credit = Instance.new("TextLabel", colorPanel)
@@ -455,9 +555,11 @@ local function CreateUI()
     credit.Position               = UDim2.new(0, 15, 1, -25)
     credit.BackgroundTransparency = 1
     credit.Text                   = "@AYBAT_ATAYBEK"
-    credit.TextColor3             = Color3.fromRGB(150, 150, 150)
+    credit.TextColor3             = Color3.fromRGB(180, 180, 180)
     credit.TextScaled             = true
-    credit.FontFace               = starbornFont
+    credit.FontFace               = mainFont
+    credit.TextStrokeColor3       = Color3.new(0, 0, 0)
+    credit.TextStrokeTransparency = 0.5
     credit.ZIndex                 = 5
 
     local function showMenu()
@@ -488,12 +590,10 @@ local function CreateUI()
     lock.MouseButton1Click:Connect(function()
         _G.GuiLocked = not _G.GuiLocked
         local tl = lock:FindFirstChildOfClass("TextLabel")
-        if tl then tl.Text = _G.GuiLocked and "UNFIX" or "FIXED" end
+        if tl then tl.Text = _G.GuiLocked and "ОТКРЕП." or "ФИКСИР." end
         lock.BackgroundColor3 = _G.GuiLocked
             and Color3.fromRGB(120, 0, 0)
             or  Color3.fromRGB(30, 30, 30)
-        notify(_G.GuiLocked and "GUI зафиксирован 🔒" or "GUI откреплён 🔓",
-            _G.GuiLocked and Color3.fromRGB(255, 80, 80) or Color3.fromRGB(80, 255, 80))
     end)
 
     scrB.MouseButton1Click:Connect(function()
@@ -508,8 +608,15 @@ local function CreateUI()
                 vDir = dir
             end
         end)
-        btn.InputEnded:Connect(function() vDir = 0 end)
+        btn.InputEnded:Connect(function(i)
+            if i.UserInputType == Enum.UserInputType.MouseButton1
+            or i.UserInputType == Enum.UserInputType.Touch then
+                vDir = 0
+            end
+        end)
+        btn.MouseLeave:Connect(function() vDir = 0 end)
     end
+
     setupFlight(upB,  1)
     setupFlight(dwB, -1)
 
@@ -525,9 +632,11 @@ local function CreateUI()
     MakeDraggable(open,  openCont)
 
     updateColor()
-    notify("DANDY GUI загружен! ✓", Color3.fromRGB(80, 255, 80))
 end
 
+-- ══════════════════════════════════════════
+--  ЗАПУСК
+-- ══════════════════════════════════════════
 RS.Heartbeat:Connect(ManagePlatform)
 
 task.spawn(function()
