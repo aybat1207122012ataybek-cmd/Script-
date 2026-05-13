@@ -1,8 +1,8 @@
--- Forsaken Finder v4.0 (Адаптивный, Казахстан)
+-- Forsaken Finder v4.1 (фикс Bad API + лагов)
 local PlaceId = 18687417158
-local InitialMaxPing = 120       -- начальный порог, если не найдёт — повысит сам
-local MaxPingStep = 20           -- шаг увеличения порога
-local MaxPingLimit = 350         -- абсолютный максимум, чтобы не искать вечно
+local InitialMaxPing = 120
+local MaxPingStep = 20
+local MaxPingLimit = 350
 local MinFreeSlots = 1
 local FetchLimit = 100
 
@@ -22,7 +22,7 @@ main.Draggable = true
 
 local title = Instance.new("TextButton", main)
 title.Size = UDim2.new(1, 0, 0, 25)
-title.Text = "Forsaken Finder v4"
+title.Text = "Forsaken Finder v4.1"
 title.BackgroundTransparency = 1
 title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
@@ -42,6 +42,7 @@ scroll.Position = UDim2.new(0, 5, 0, 70)
 scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
 scroll.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
 scroll.BorderSizePixel = 0
+scroll.ScrollBarThickness = 6
 
 local refreshBtn = Instance.new("TextButton", main)
 refreshBtn.Size = UDim2.new(0, 80, 0, 28)
@@ -93,29 +94,45 @@ local function tryFetch(url)
 end
 
 local function getColor(ping)
-    if ping < 100 then return Color3.fromRGB(40, 120, 40)      -- зелёный
-    elseif ping < 150 then return Color3.fromRGB(160, 130, 30) -- жёлтый
-    else return Color3.fromRGB(120, 40, 40) end                 -- красный
+    if ping < 100 then return Color3.fromRGB(40, 120, 40)
+    elseif ping < 150 then return Color3.fromRGB(160, 130, 30)
+    else return Color3.fromRGB(120, 40, 40) end
+end
+
+local function clearScroll()
+    for _, c in ipairs(scroll:GetChildren()) do
+        c:Destroy()
+    end
 end
 
 local function update()
-    for _, c in ipairs(scroll:GetChildren()) do c:Destroy() end
+    clearScroll()
     status.Text = "Fetching servers..."
+    
     local url = "https://games.roblox.com/v1/games/" .. PlaceId .. "/servers/Public?limit=" .. FetchLimit
     local body = tryFetch(url)
     if not body then
         status.Text = "HTTP request blocked! Change executor."
         return
     end
-    local ok, data = pcall(function() return HttpService:JSONDecode(body) end)
-    if not ok or not data or not data.data then
-        status.Text = "Bad API response"
+    
+    -- Безопасный парсинг JSON
+    local ok, data = pcall(function()
+        return HttpService:JSONDecode(body)
+    end)
+    if not ok or type(data) ~= "table" or not data.data then
+        -- Проверим, не пришёл ли ответ с ошибкой
+        if body:find("error") or body:find("TooManyRequests") then
+            status.Text = "Roblox API rate limited. Wait 30s."
+        else
+            status.Text = "Bad API response. Raw: " .. string.sub(body, 1, 80)
+        end
         return
     end
 
     local allServers = data.data
     if #allServers == 0 then
-        status.Text = "0 servers from API. Internet/Roblox issue."
+        status.Text = "0 servers from API. Try again later."
         return
     end
 
@@ -136,12 +153,25 @@ local function update()
         end
     end
 
-    -- Сортировка по пингу
+    -- Сортировка
     table.sort(filtered, function(a, b) return (a.ping or 999) < (b.ping or 999) end)
 
-    -- Отображение
+    -- Строим список без лагов: создаём элементы пачками с задержкой
     local y = 0
-    for _, s in ipairs(filtered) do
+    local index = 0
+    local function addNext()
+        index = index + 1
+        if index > #filtered then
+            scroll.CanvasSize = UDim2.new(0, 0, 0, y)
+            if #filtered > 0 then
+                status.Text = string.format("Showing %d servers (ping≤%d ms, API total: %d)", #filtered, currentMaxPing, #allServers)
+            else
+                status.Text = string.format("0 servers (max ping tried: %d)", currentMaxPing)
+            end
+            return
+        end
+
+        local s = filtered[index]
         local ping = s.ping or 999
         local playing = s.playing or 0
         local maxPlayers = s.maxPlayers or 100
@@ -172,10 +202,10 @@ local function update()
         joinBtn.TextSize = 10
         joinBtn.MouseButton1Click:Connect(function()
             status.Text = "Joining..."
-            local success, err = pcall(function()
+            local ok, err = pcall(function()
                 TeleportService:TeleportToPlaceInstance(PlaceId, s.id, Players.LocalPlayer)
             end)
-            if not success then
+            if not ok then
                 local link = "roblox://placeId=" .. PlaceId .. "&gameInstanceId=" .. s.id
                 pcall(function() setclipboard(link) end)
                 status.Text = "Teleport blocked. Link copied!"
@@ -197,36 +227,44 @@ local function update()
         end)
 
         y = y + 45
+        -- Задержка между созданием элементов, чтобы не лагало
+        wait(0.01)
+        addNext()
     end
-    scroll.CanvasSize = UDim2.new(0, 0, 0, y)
 
-    if #filtered > 0 then
-        status.Text = string.format("Showing %d servers (ping≤%d ms, total API: %d)", #filtered, currentMaxPing, #allServers)
-        -- Кнопка JOIN BEST использует первый (лучший) сервер
-        bestBtn.MouseButton1Click:Connect(function()
-            if #filtered > 0 then
-                local best = filtered[1]
-                status.Text = "Joining best server..."
-                local success, err = pcall(function()
-                    TeleportService:TeleportToPlaceInstance(PlaceId, best.id, Players.LocalPlayer)
-                end)
-                if not success then
-                    local link = "roblox://placeId=" .. PlaceId .. "&gameInstanceId=" .. best.id
-                    pcall(function() setclipboard(link) end)
-                    status.Text = "Copied best link! Paste in browser."
-                end
+    -- Кнопка JOIN BEST
+    bestBtn.MouseButton1Click:Connect(function()
+        if #filtered > 0 then
+            local best = filtered[1]
+            status.Text = "Joining best server..."
+            local ok, err = pcall(function()
+                TeleportService:TeleportToPlaceInstance(PlaceId, best.id, Players.LocalPlayer)
+            end)
+            if not ok then
+                local link = "roblox://placeId=" .. PlaceId .. "&gameInstanceId=" .. best.id
+                pcall(function() setclipboard(link) end)
+                status.Text = "Copied best link! Paste in browser."
             end
-        end)
-    else
-        status.Text = string.format("0 servers found (max ping tried: %d)", currentMaxPing)
-    end
+        else
+            status.Text = "No servers to join."
+        end
+    end)
+
+    -- Запускаем построение списка
+    addNext()
 end
 
-refreshBtn.MouseButton1Click:Connect(update)
-bestBtn.MouseButton1Click:Connect(function()
-    status.Text = "No servers loaded yet. Refresh first."
+refreshBtn.MouseButton1Click:Connect(function()
+    -- Отключаем кнопки на время обновления, чтобы избежать двойных запросов
+    refreshBtn.Active = false
+    bestBtn.Active = false
+    update()
+    wait(1)
+    refreshBtn.Active = true
+    bestBtn.Active = true
 end)
 
+-- Первичное обновление
 spawn(function()
     wait(1)
     update()
