@@ -1,5 +1,5 @@
 -- Forsaken Server Finder (Казахстан, Алматы, без VPN)
-local PlaceId = 2316992690
+local PlaceId = 18687417158
 local MaxPing = 120              -- твой реальный пинг ~100, берём с запасом
 local MinFreeSlots = 1           -- хотя бы 1 свободное место
 local FetchLimit = 100
