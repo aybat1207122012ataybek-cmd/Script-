@@ -1,6 +1,6 @@
 -- ╔══════════════════════════════════════════════╗
--- ║         DANDY PLATFORM GUI  v4.5             ║
--- ║              by @AYBAT_ATAYBEK               ║
+-- ║         DANDY PLATFORM GUI  v5.0           ║
+-- ║              by @AYBAT_ATAYBEK             ║
 -- ╚══════════════════════════════════════════════╝
 
 if not game:IsLoaded() then game.Loaded:Wait() end
@@ -90,12 +90,6 @@ local mainFont = Font.new(
 )
 
 -- ══════════════════════════════════════════
---  TWEEN КОНСТАНТЫ
--- ══════════════════════════════════════════
-local tweenPress   = TweenInfo.new(0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-local tweenRelease = TweenInfo.new(0.15, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
-
--- ══════════════════════════════════════════
 --  ЗВУК КЛИКА
 -- ══════════════════════════════════════════
 local function PlayClick()
@@ -107,55 +101,78 @@ local function PlayClick()
 end
 
 -- ══════════════════════════════════════════
---  АНИМАЦИЯ КНОПКИ
+--  ЗВУК НАВЕДЕНИЯ (HOVER)
 -- ══════════════════════════════════════════
-local DEBOUNCE = 0.12
+local hoverSoundId = "rbxassetid://6895079853"
 
+local function PlayHoverSound()
+    local s = Instance.new("Sound", SP)
+    s.SoundId = hoverSoundId
+    s.Volume = 0.5
+    s:Play()
+    Debris:AddItem(s, 1)
+end
+
+-- ══════════════════════════════════════════
+--  АНИМАЦИЯ КНОПКИ (СТИЛЬ JOURNAL)
+-- ══════════════════════════════════════════
 local function animBtn(btn)
-    btn.AnchorPoint = Vector2.new(0.5, 0.5)
-    btn.Position    = UDim2.new(0.5, 0, 0.5, 0)
+    local originalSize = btn.Size
 
-    local tweenDown = TweenS:Create(btn, tweenPress, {
-        BackgroundTransparency = 0.05,
-        Size = UDim2.new(0.84, 0, 0.84, 0),
-    })
-    local tweenUp = TweenS:Create(btn, tweenRelease, {
-        BackgroundTransparency = 0.4,
-        Size = UDim2.new(1, 0, 1, 0),
-    })
+    local hoverSize = UDim2.new(
+        originalSize.X.Scale * 1.08,
+        originalSize.X.Offset,
+        originalSize.Y.Scale * 1.08,
+        originalSize.Y.Offset
+    )
 
-    local pressing = false
-    local lastTime = 0
+    local hoverTween = TweenS:Create(
+        btn,
+        TweenInfo.new(0.12, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+        {Size = hoverSize}
+    )
 
-    local function onPress()
-        local now = tick()
-        if pressing or (now - lastTime) < DEBOUNCE then return end
-        pressing = true
-        tweenUp:Cancel()
-        tweenDown:Play()
-    end
+    local leaveTween = TweenS:Create(
+        btn,
+        TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+        {Size = originalSize}
+    )
 
-    local function onRelease()
-        if not pressing then return end
-        pressing = false
-        lastTime = tick()
-        tweenDown:Cancel()
-        tweenUp:Play()
-    end
+    local pressTween = TweenS:Create(
+        btn,
+        TweenInfo.new(0.05, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+        {
+            Size = UDim2.new(
+                originalSize.X.Scale * 0.95,
+                originalSize.X.Offset,
+                originalSize.Y.Scale * 0.95,
+                originalSize.Y.Offset
+            )
+        }
+    )
 
-    btn.InputBegan:Connect(function(i)
-        if i.UserInputType == Enum.UserInputType.MouseButton1
-        or i.UserInputType == Enum.UserInputType.Touch then
-            onPress()
+    btn.MouseEnter:Connect(function()
+        hoverTween:Play()
+        task.spawn(PlayHoverSound)
+    end)
+
+    btn.MouseLeave:Connect(function()
+        leaveTween:Play()
+    end)
+
+    btn.MouseButton1Down:Connect(function()
+        pressTween:Play()
+    end)
+
+    btn.MouseButton1Up:Connect(function()
+        hoverTween:Play()
+    end)
+
+    btn.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Touch then
+            task.spawn(PlayHoverSound)
         end
     end)
-    btn.InputEnded:Connect(function(i)
-        if i.UserInputType == Enum.UserInputType.MouseButton1
-        or i.UserInputType == Enum.UserInputType.Touch then
-            onRelease()
-        end
-    end)
-    btn.MouseLeave:Connect(onRelease)
 end
 
 -- ══════════════════════════════════════════
@@ -350,10 +367,12 @@ local function CreateUI()
     menu.Size               = UDim2.new(0, 75, 0, 320)
     menu.Position           = UDim2.new(0.05, 0, 0.2, 0)
     menu.BackgroundTransparency = 1
+    menu.Visible = false
+    menu.ClipsChildren = true
 
     local openCont = Instance.new("Frame", sg)
     openCont.Size               = UDim2.new(0, 70, 0, 45)
-    openCont.Visible            = false
+    openCont.Visible            = true
     openCont.BackgroundTransparency = 1
 
     local scriptPanel = Instance.new("Frame", menu)
@@ -632,6 +651,9 @@ local function CreateUI()
     MakeDraggable(open,  openCont)
 
     updateColor()
+
+    -- Автоматическое открытие при первом запуске
+    task.delay(0.5, showMenu)
 end
 
 -- ══════════════════════════════════════════
