@@ -229,11 +229,27 @@ getgenv().sidebar_executor   = ""
 getgenv().sidebar_console    = ""
 
 local function onGuiReady(gui)
+    -- Загружаем внешние модули сначала
+    task.spawn(loadExternalModules)
+    
+    -- Даём им время на полную загрузку (1.5 секунды)
+    task.wait(1.5)
+    
+    -- Теперь применяем покраску и замену placeholder
     paintAll(gui)
     replaceEditByCao(gui)
     applyLocks(gui)
     startWatchdog(gui)
+    
+    -- Повторная покраска через 0.5 секунды для подстраховки
+    task.delay(0.5, function()
+        if gui and gui.Parent then
+            paintAll(gui)
+            replaceEditByCao(gui)
+        end
+    end)
 
+    -- Следим за новыми объектами
     gui.DescendantAdded:Connect(function(obj)
         task.defer(function()
             pcall(paintOne, obj)
@@ -250,13 +266,6 @@ local function onGuiReady(gui)
                 pcall(lockObject, ch)
             end
         end)
-    end)
-
-    task.spawn(function()
-        loadExternalModules()
-        task.wait(0.5)
-        paintAll(gui)
-        replaceEditByCao(gui)
     end)
 end
 
