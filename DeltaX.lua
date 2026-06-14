@@ -1,45 +1,27 @@
--- ╔═══════════════════════════════════════════════════════════════════════════╗
--- ║   DELTA X – ПОЛНАЯ КАСТОМИЗАЦИЯ (цвета + внешние модули + картинка)      ║
--- ║   Читает USER_COLORS, image, sidebar_* из getgenv()                       ║
--- ╚═══════════════════════════════════════════════════════════════════════════╝
-
-if getgenv().DeltaX_Full then return end
-getgenv().DeltaX_Full = true
+if getgenv().DeltaX_NightGarden then return end
+getgenv().DeltaX_NightGarden = true
 
 local function hex(c)
-    if type(c) == "string" and c:sub(1,1) == "#" then
-        return Color3.fromRGB(tonumber(c:sub(2,3),16), tonumber(c:sub(4,5),16), tonumber(c:sub(6,7),16))
-    end
-    return c
+    return Color3.fromRGB(tonumber(c:sub(2,3),16), tonumber(c:sub(4,5),16), tonumber(c:sub(6,7),16))
 end
 
-local user = getgenv()
-local USER_COLORS = user.USER_COLORS or {}
-
 local C = {
-    bg_deep   = hex(USER_COLORS.bg_deep   or "#0A0812"),
-    bg_panel  = hex(USER_COLORS.bg_panel  or "#1E1328"),
-    bg_button = hex(USER_COLORS.bg_button or "#7B558A"),
-    text_main = hex(USER_COLORS.text_main or "#D8C4E5"),
-    text_dim  = hex(USER_COLORS.text_dim  or "#A48CB3"),
-    accent    = hex(USER_COLORS.accent    or "#C5A0B0"),
+    bg_deep      = hex("#0A0812"),
+    bg_panel     = hex("#1E1328"),
+    bg_button    = hex("#7B558A"),
+    btn_hover    = hex("#A683B5"),
+    btn_press    = hex("#5E3D6E"),
+    bg_editor    = hex("#050308"),
+    text_main    = hex("#D8C4E5"),
+    text_dim     = hex("#A48CB3"),
+    accent       = hex("#C5A0B0"),
 }
 
--- Глобальные настройки (картинка, скрытие иконок)
-user.image = user.image or "79894686093927"
-user.sidebar_settings  = user.sidebar_settings  or ""
-user.sidebar_scripthub = user.sidebar_scripthub or ""
-user.sidebar_home      = user.sidebar_home      or ""
-user.sidebar_executor  = user.sidebar_executor  or ""
-user.sidebar_console   = user.sidebar_console   or ""
-
--- Шрифты
 local FF_FREDOKA = pcall(function()
     return Font.new("rbxasset://fonts/families/FredokaOne.json", Enum.FontWeight.Regular, Enum.FontStyle.Normal)
 end) and Font.new("rbxasset://fonts/families/FredokaOne.json", Enum.FontWeight.Regular, Enum.FontStyle.Normal) or nil
 local FF_CODE = Enum.Font.RobotoMono
 
--- Защита color picker
 local COLOR_KEYS  = {"hue","saturation","spectrum","rainbow","gradient","colorbar","huebar"}
 local SLIDER_KEYS = {"slider","thumb","knob","handle","dragger"}
 local function hasUIGradient(obj) return obj:FindFirstChildOfClass("UIGradient") ~= nil end
@@ -60,7 +42,6 @@ local function shouldSkip(obj)
     return false
 end
 
--- Игнорируемые кнопки
 local IGNORE_TEXTS = {"скрипт хаб", "главный дом", "облако скриптов"}
 local function shouldIgnoreButton(obj)
     if not obj:IsA("TextButton") then return false end
@@ -69,7 +50,6 @@ local function shouldIgnoreButton(obj)
     return false
 end
 
--- Чужой цвет
 local function isForeignColor(color)
     if not color then return false end
     local r,g,b = color.R, color.G, color.B
@@ -79,7 +59,6 @@ local function isForeignColor(color)
     return false
 end
 
--- Поиск GUI Delta X
 local CoreGui = (gethui and gethui()) or game:GetService("CoreGui")
 local function FindDeltaGui()
     for _, gui in ipairs(CoreGui:GetChildren()) do
@@ -99,7 +78,6 @@ local function FindDeltaGui()
     return nil
 end
 
--- Покраска
 local function paintOne(obj)
     if not obj:IsA("GuiObject") then return end
     if shouldSkip(obj) or shouldIgnoreButton(obj) then return end
@@ -151,7 +129,6 @@ local function paintAll(gui)
     end
 end
 
--- Замена placeholder
 local function replaceEditByCao(gui)
     for _, obj in ipairs(gui:GetDescendants()) do
         if obj:IsA("TextBox") then
@@ -170,7 +147,6 @@ local function replaceEditByCao(gui)
     end
 end
 
--- Защита от сброса цветов
 local locked = {}
 local function lockObject(obj)
     if not obj:IsA("GuiObject") then return end
@@ -213,7 +189,6 @@ local function applyLocks(gui)
     end
 end
 
--- Watchdog
 local function startWatchdog(gui)
     task.spawn(function()
         while gui and gui.Parent do
@@ -237,7 +212,6 @@ local function startWatchdog(gui)
     end)
 end
 
--- Внешние модули (кастомизация картинки, скрытие иконок и т.д.)
 local function loadExternalModules()
     pcall(function()
         loadstring(game:HttpGet("https://raw.githubusercontent.com/ltseverydayyou/uuuuuuu/refs/heads/main/DeltaCustomizationModule.luau"))()
@@ -247,7 +221,13 @@ local function loadExternalModules()
     end)
 end
 
--- Основной запуск
+getgenv().image              = "79894686093927"
+getgenv().sidebar_settings   = ""
+getgenv().sidebar_scripthub  = ""
+getgenv().sidebar_home       = ""
+getgenv().sidebar_executor   = ""
+getgenv().sidebar_console    = ""
+
 local function onGuiReady(gui)
     paintAll(gui)
     replaceEditByCao(gui)
@@ -272,7 +252,12 @@ local function onGuiReady(gui)
         end)
     end)
 
-    task.spawn(loadExternalModules)
+    task.spawn(function()
+        loadExternalModules()
+        task.wait(0.5)
+        paintAll(gui)
+        replaceEditByCao(gui)
+    end)
 end
 
 local deltaGui = FindDeltaGui()
