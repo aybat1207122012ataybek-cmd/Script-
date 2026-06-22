@@ -1,11 +1,6 @@
 -- ╔══════════════════════════════════════════════╗
--- ║          DONT GRAB ME v4.0                  ║
+-- ║          DONT GRAB ME v4.0 FINAL            ║
 -- ╚══════════════════════════════════════════════╝
--- Изменение: ветка "not ok" в __namecall теперь
--- оборачивает повторный вызов oldNamecall в pcall
--- Это устраняет ошибку "httpget is not a valid
--- member of DataModel Ugc" при вызове :HttpGet()
--- на не-game объектах из других скриптов игры
 
 if not game:IsLoaded() then game.Loaded:Wait() end
 if getgenv().DONT_GRAB_ME then return end
@@ -313,23 +308,10 @@ end
 
 -- ══════════════════════════════════════════════
 -- ХУК __NAMECALL
--- ИСПРАВЛЕНИЕ: ветка "not ok" теперь оборачивает
--- повторный вызов oldNamecall в отдельный pcall
--- 
--- Причина ошибки "httpget is not a valid member
--- of DataModel Ugc":
--- 1. Игровой скрипт вызывает Ugc:HttpGet(url)
--- 2. Наш хук перехватывает вызов
--- 3. self == game → false → пропускаем проверку
--- 4. Вызываем oldNamecall(self, ...) внутри pcall
--- 5. oldNamecall бросает ошибку → ok = false
--- 6. В ветке "not ok" повторно вызываем
---    oldNamecall(self, ...) БЕЗ pcall
--- 7. Ошибка вылетает из хука наружу → видима
---
--- Исправление: оборачиваем повторный вызов в pcall
--- Если оригинальный метод недоступен на объекте —
--- тихо возвращаем nil вместо crash
+-- Структура из рабочей версии: без двойного pcall
+-- Одиночный вызов oldNamecall — ошибки от других
+-- объектов (Ugc и т.д.) проходят как обычно
+-- и не создают дополнительных проблем
 -- ══════════════════════════════════════════════
 local mt = _getrawmeta(game)
 local oldNamecall = mt.__namecall
@@ -338,37 +320,30 @@ local namecallHookOk = false
 do
     local hookOk = _pcall(function()
         _setreadonly(mt, false)
-        mt.__namecall = _newcclosure(function(self, ...)
-            local ok, result = _pcall(function()
-                local method = _getnamecallmethod()
-                if method == "HttpGet" or method == "HttpGetAsync" then
-                    if self == game then
-                        -- Проверяем только вызовы на game
-                        -- Ugc:HttpGet() и другие объекты пропускаем
-                        local args = {...}
-                        local url = args[1]
-                        if handleCheck(url) == "blocked" then
-                            return "Blocked by DontGrabMe"
-                        end
-                    end
-                end
-                return oldNamecall(self, ...)
-            end)
 
-            if not ok then
-                -- ИСПРАВЛЕНИЕ: оборачиваем в pcall
-                -- Если oldNamecall бросит ошибку (например Ugc:HttpGet)
-                -- она не вылетит наружу из хука
-                local retryOk, retryResult = _pcall(oldNamecall, self, ...)
-                if retryOk then
-                    return retryResult
+        mt.__namecall = _newcclosure(function(self, ...)
+            local method = _getnamecallmethod()
+
+            if (method == "HttpGet" or method == "HttpGetAsync")
+                and typeof(self) == "Instance"
+                and self == game
+            then
+                -- Проверяем только вызовы именно на game
+                -- Ugc:HttpGet() и любые другие объекты
+                -- не попадают в эту ветку и уходят в oldNamecall
+                local args = {...}
+                local url = args[1]
+                if handleCheck(url) == "blocked" then
+                    return "Blocked by DontGrabMe"
                 end
-                -- Если и повторный вызов упал — возвращаем nil тихо
-                return nil
             end
 
-            return result
+            -- Одиночный вызов оригинала без дополнительных обёрток
+            -- Это ключевое отличие от предыдущей версии
+            -- Ошибки от других объектов идут своим путём
+            return oldNamecall(self, ...)
         end)
+
         _setreadonly(mt, true)
     end)
 
@@ -380,31 +355,31 @@ do
     end
 end
 
-local function tryHookRequestAsync()
-    if typeof(HttpService.RequestAsync) ~= "function" then return end
-    local ok = _pcall(function()
-        local oldRA = _hookfunction(
-            HttpService.RequestAsync,
-            _newcclosure(function(self, options)
-                local url = options and options.Url
-                if handleCheck(url) == "blocked" then
-                    return {
-                        Success    = false,
-                        StatusCode = 403,
-                        Body       = "Blocked by DontGrabMe",
-                    }
-                end
-                return oldRA(self, options)
-            end)
-        )
-    end)
-    if not ok then
-        _rconsoleprint("[DontGrabMe] RequestAsync hook недоступен\n")
-    end
-end
+-- ══════════════════════════════════════════════
+-- ХУК RequestAsync (опциональный)
+-- ══════════════════════════════════════════════
+_pcall(function()
+    local oldRA = _hookfunction(
+        HttpService.RequestAsync,
+        _newcclosure(function(self, options)
+            local url = options and options.Url
+            if handleCheck(url) == "blocked" then
+                return {
+                    Success    = false,
+                    StatusCode = 403,
+                    Body       = "Blocked by DontGrabMe",
+                }
+            end
+            return oldRA(self, options)
+        end)
+    )
+end)
 
-tryHookRequestAsync()
-
+-- ══════════════════════════════════════════════
+-- ХУКИ EXECUTOR ФУНКЦИЙ
+-- getNestedFn корректно ищет syn.request и другие
+-- вложенные API через двухуровневый доступ
+-- ══════════════════════════════════════════════
 local function getNestedFn(path)
     local ok, env = _pcall(_getfenv, 0)
     if not ok or _type(env) ~= "table" then return nil end
@@ -420,10 +395,8 @@ local function getNestedFn(path)
 
     for i = 2, #parts do
         if _type(current) ~= "table" then return nil end
-        local fieldOk, val = _pcall(function()
-            return current[parts[i]]
-        end)
-        if not fieldOk then return nil end
+        local fOk, val = _pcall(function() return current[parts[i]] end)
+        if not fOk then return nil end
         current = val
     end
 
@@ -443,14 +416,13 @@ local function hookExecutorRequest(fnName)
     if getgenv().DONT_GRAB_ME_HOOKS[fnName] then return end
 
     local fn = nil
-    local ok = _pcall(function()
-        fn = getNestedFn(fnName)
-    end)
-
-    if not ok or _type(fn) ~= "function" then return end
+    _pcall(function() fn = getNestedFn(fnName) end)
+    if _type(fn) ~= "function" then return end
 
     local hookOk = _pcall(function()
         local old = _hookfunction(fn, _newcclosure(function(tbl)
+            -- Используем old (оригинал), а не fn
+            -- fn вызвал бы рекурсию
             local url = tbl and (tbl.Url or tbl.URL or tbl.url)
             if not url or _type(url) ~= "string" then
                 return old(tbl)
@@ -480,6 +452,9 @@ hookExecutorRequest("syn.request")
 hookExecutorRequest("fluxus.request")
 hookExecutorRequest("http.request")
 
+-- ══════════════════════════════════════════════
+-- ПУБЛИЧНЫЙ API
+-- ══════════════════════════════════════════════
 getgenv().DontGrabMe = {
 
     addBlacklist = function(domain)
@@ -600,17 +575,13 @@ getgenv().DontGrabMe = {
 
     unload = function()
         if namecallHookOk then
-            local ok = _pcall(function()
+            _pcall(function()
                 local mt2 = _getrawmeta(game)
                 _setreadonly(mt2, false)
                 mt2.__namecall = oldNamecall
                 _setreadonly(mt2, true)
-            end)
-            if ok then
                 _rconsoleprint("[DontGrabMe] __namecall восстановлен\n")
-            else
-                _rconsoleprint("[DontGrabMe] Не удалось восстановить __namecall\n")
-            end
+            end)
         end
         getgenv().DONT_GRAB_ME = nil
         _rconsoleprint("[DontGrabMe] Выгружен.\n")
@@ -619,5 +590,5 @@ getgenv().DontGrabMe = {
     end,
 }
 
-_rconsoleprint("[DontGrabMe v4.0] Активен.\n")
+_rconsoleprint("[DontGrabMe v4.0 FINAL] Активен.\n")
 _rconsoleprint("[DontGrabMe] DontGrabMe.stats() — статистика.\n")
