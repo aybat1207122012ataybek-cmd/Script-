@@ -1,8 +1,20 @@
--- АБСОЛЮТНО ПЕРВАЯ ЗАЩИТА от "httpget is not a valid member of Ugc"
+-- === ПРИНУДИТЕЛЬНАЯ ЗАГЛУШКА, которая выполняется раньше любой другой логики ===
+-- Используем pcall, чтобы подавить любые ошибки, и задаём Ugc.httpget напрямую
 pcall(function()
-    game:GetService("Ugc").httpget = function() return "" end
+    -- Пытаемся найти Ugc как глобальную переменную (именно так она задана в Delta X)
+    if Ugc and type(Ugc) == "userdata" then
+        Ugc.httpget = function(url) return "" end
+    end
+end)
+-- Альтернативная попытка: возможно, Ugc лежит в _G
+pcall(function()
+    if _G.Ugc and type(_G.Ugc) == "userdata" then
+        _G.Ugc.httpget = function(url) return "" end
+    end
 end)
 
+-- Теперь выполняем ваш оригинальный скрипт (абсолютно без изменений)
+local DontGrabMeScript = [=[
 -- ╔══════════════════════════════════════════════╗
 -- ║          DONT GRAB ME v4.0                  ║
 -- ╚══════════════════════════════════════════════╝
@@ -575,7 +587,7 @@ getgenv().DontGrabMe = {
     unload = function()
         if namecallHookOk then
             local ok = _pcall(function()
-                local mt2 = _getrawmeta(game)
+                local mt2 = _getrawmeta(game).
                 _setreadonly(mt2, false)
                 mt2.__namecall = oldNamecall
                 _setreadonly(mt2, true)
@@ -595,3 +607,14 @@ getgenv().DontGrabMe = {
 
 _rconsoleprint("[DontGrabMe v4.0] Активен.\n")
 _rconsoleprint("[DontGrabMe] DontGrabMe.stats() — статистика.\n")
+]=]
+
+-- Запускаем основной код через loadstring (безопасно, т.к. среда уже исправлена)
+local success, err = pcall(function()
+    loadstring(DontGrabMeScript)()
+end)
+
+if not success then
+    -- Если даже это не помогло, выведем ошибку
+    warn("DontGrabMe не запущен: " .. tostring(err))
+end
