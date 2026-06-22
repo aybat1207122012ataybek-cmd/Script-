@@ -1,29 +1,21 @@
 -- ╔══════════════════════════════════════════════╗
--- ║       DONT GRAB ME v4.0 (Delta X Fix)      ║
+-- ║          DONT GRAB ME v4.0                  ║
 -- ╚══════════════════════════════════════════════╝
-
--- Защита от Ugc (без GetService, через глобальный объект)
-pcall(function()
-    if Ugc and type(Ugc) == "userdata" and type(Ugc.httpget) ~= "function" then
-        Ugc.httpget = function() return "" end
-    end
-end)
-pcall(function()
-    if _G.Ugc and type(_G.Ugc) == "userdata" and type(_G.Ugc.httpget) ~= "function" then
-        _G.Ugc.httpget = function() return "" end
-    end
-end)
+-- Изменение: ветка "not ok" в __namecall теперь
+-- оборачивает повторный вызов oldNamecall в pcall
+-- Это устраняет ошибку "httpget is not a valid
+-- member of DataModel Ugc" при вызове :HttpGet()
+-- на не-game объектах из других скриптов игры
 
 if not game:IsLoaded() then game.Loaded:Wait() end
-if _G.DONT_GRAB_ME then return end
-_G.DONT_GRAB_ME = true
+if getgenv().DONT_GRAB_ME then return end
+getgenv().DONT_GRAB_ME = true
 
--- Используем warn вместо rconsoleprint
-local _warn = warn or print
 local _hookfunction      = hookfunction      or function(o, h) return o end
 local _newcclosure       = newcclosure       or function(fn) return fn end
 local _getrawmeta        = getrawmetatable   or getmetatable
 local _setreadonly       = setreadonly       or function() end
+local _rconsoleprint     = rconsoleprint     or print
 local _getnamecallmethod = getnamecallmethod or function() return nil end
 local _getfenv           = getfenv
 local _rawget            = rawget
@@ -46,9 +38,8 @@ local _table_remove      = table.remove
 
 local HttpService = game:GetService("HttpService")
 
--- Данные храним в _G (вместо getgenv)
-if not _G.DONT_GRAB_ME_DATA then
-    _G.DONT_GRAB_ME_DATA = {
+if not getgenv().DONT_GRAB_ME_DATA then
+    getgenv().DONT_GRAB_ME_DATA = {
 
         blacklist = {
             "grabify.link",
@@ -118,14 +109,14 @@ if not _G.DONT_GRAB_ME_DATA then
         },
     }
 
-    local d = _G.DONT_GRAB_ME_DATA
+    local d = getgenv().DONT_GRAB_ME_DATA
     for i, v in _ipairs(d.blacklist)  do d.blacklist[i]  = _string_lower(v) end
     for i, v in _ipairs(d.suspicious) do d.suspicious[i] = _string_lower(v) end
     for i, v in _ipairs(d.whitelist)  do d.whitelist[i]  = _string_lower(v) end
 end
 
 local function getDataSafe()
-    local data = _G.DONT_GRAB_ME_DATA
+    local data = getgenv().DONT_GRAB_ME_DATA
     if _type(data)            ~= "table" then return nil end
     if _type(data.blacklist)  ~= "table" then return nil end
     if _type(data.whitelist)  ~= "table" then return nil end
@@ -282,8 +273,8 @@ local function Log(category, url)
     local data = getDataSafe()
     if not data then return end
     if not data.logFlags[category] then return end
-    _warn(_string_format(
-        "[DontGrabMe] %s: %s",
+    _rconsoleprint(_string_format(
+        "[DontGrabMe] %s: %s\n",
         category:upper(),
         _tostring(url)
     ))
@@ -320,7 +311,26 @@ local function handleCheck(url)
     return result
 end
 
+-- ══════════════════════════════════════════════
 -- ХУК __NAMECALL
+-- ИСПРАВЛЕНИЕ: ветка "not ok" теперь оборачивает
+-- повторный вызов oldNamecall в отдельный pcall
+-- 
+-- Причина ошибки "httpget is not a valid member
+-- of DataModel Ugc":
+-- 1. Игровой скрипт вызывает Ugc:HttpGet(url)
+-- 2. Наш хук перехватывает вызов
+-- 3. self == game → false → пропускаем проверку
+-- 4. Вызываем oldNamecall(self, ...) внутри pcall
+-- 5. oldNamecall бросает ошибку → ok = false
+-- 6. В ветке "not ok" повторно вызываем
+--    oldNamecall(self, ...) БЕЗ pcall
+-- 7. Ошибка вылетает из хука наружу → видима
+--
+-- Исправление: оборачиваем повторный вызов в pcall
+-- Если оригинальный метод недоступен на объекте —
+-- тихо возвращаем nil вместо crash
+-- ══════════════════════════════════════════════
 local mt = _getrawmeta(game)
 local oldNamecall = mt.__namecall
 local namecallHookOk = false
@@ -333,6 +343,8 @@ do
                 local method = _getnamecallmethod()
                 if method == "HttpGet" or method == "HttpGetAsync" then
                     if self == game then
+                        -- Проверяем только вызовы на game
+                        -- Ugc:HttpGet() и другие объекты пропускаем
                         local args = {...}
                         local url = args[1]
                         if handleCheck(url) == "blocked" then
@@ -342,9 +354,19 @@ do
                 end
                 return oldNamecall(self, ...)
             end)
+
             if not ok then
-                return oldNamecall(self, ...)
+                -- ИСПРАВЛЕНИЕ: оборачиваем в pcall
+                -- Если oldNamecall бросит ошибку (например Ugc:HttpGet)
+                -- она не вылетит наружу из хука
+                local retryOk, retryResult = _pcall(oldNamecall, self, ...)
+                if retryOk then
+                    return retryResult
+                end
+                -- Если и повторный вызов упал — возвращаем nil тихо
+                return nil
             end
+
             return result
         end)
         _setreadonly(mt, true)
@@ -352,13 +374,12 @@ do
 
     if hookOk then
         namecallHookOk = true
-        _warn("[DontGrabMe] __namecall hook установлен")
+        _rconsoleprint("[DontGrabMe] __namecall hook установлен\n")
     else
-        _warn("[DontGrabMe] __namecall hook недоступен")
+        _rconsoleprint("[DontGrabMe] __namecall hook недоступен\n")
     end
 end
 
--- ХУК RequestAsync
 local function tryHookRequestAsync()
     if typeof(HttpService.RequestAsync) ~= "function" then return end
     local ok = _pcall(function()
@@ -378,13 +399,12 @@ local function tryHookRequestAsync()
         )
     end)
     if not ok then
-        _warn("[DontGrabMe] RequestAsync hook недоступен")
+        _rconsoleprint("[DontGrabMe] RequestAsync hook недоступен\n")
     end
 end
 
 tryHookRequestAsync()
 
--- ХУКИ EXECUTOR ФУНКЦИЙ
 local function getNestedFn(path)
     local ok, env = _pcall(_getfenv, 0)
     if not ok or _type(env) ~= "table" then return nil end
@@ -411,16 +431,16 @@ local function getNestedFn(path)
     return current
 end
 
-if _type(_G.DONT_GRAB_ME_HOOKS) ~= "table" then
-    _G.DONT_GRAB_ME_HOOKS = {}
+if _type(getgenv().DONT_GRAB_ME_HOOKS) ~= "table" then
+    getgenv().DONT_GRAB_ME_HOOKS = {}
 end
 
 local function hookExecutorRequest(fnName)
-    if _type(_G.DONT_GRAB_ME_HOOKS) ~= "table" then
-        _G.DONT_GRAB_ME_HOOKS = {}
+    if _type(getgenv().DONT_GRAB_ME_HOOKS) ~= "table" then
+        getgenv().DONT_GRAB_ME_HOOKS = {}
     end
 
-    if _G.DONT_GRAB_ME_HOOKS[fnName] then return end
+    if getgenv().DONT_GRAB_ME_HOOKS[fnName] then return end
 
     local fn = nil
     local ok = _pcall(function()
@@ -447,10 +467,10 @@ local function hookExecutorRequest(fnName)
     end)
 
     if hookOk then
-        _G.DONT_GRAB_ME_HOOKS[fnName] = true
-        _warn("[DontGrabMe] Hooked: " .. fnName)
+        getgenv().DONT_GRAB_ME_HOOKS[fnName] = true
+        _rconsoleprint("[DontGrabMe] Hooked: " .. fnName .. "\n")
     else
-        _warn("[DontGrabMe] Не удалось захукать: " .. fnName)
+        _rconsoleprint("[DontGrabMe] Не удалось захукать: " .. fnName .. "\n")
     end
 end
 
@@ -460,22 +480,21 @@ hookExecutorRequest("syn.request")
 hookExecutorRequest("fluxus.request")
 hookExecutorRequest("http.request")
 
--- ПУБЛИЧНЫЙ API (теперь в _G)
-_G.DontGrabMe = {
+getgenv().DontGrabMe = {
 
     addBlacklist = function(domain)
         local data = getDataSafe()
         if not data then return end
         local clean = sanitizeDomain(domain)
         if not clean then
-            _warn("[DontGrabMe] addBlacklist: некорректный домен")
+            _rconsoleprint("[DontGrabMe] addBlacklist: некорректный домен\n")
             return
         end
         for _, v in _ipairs(data.blacklist) do
             if v == clean then return end
         end
         _table_insert(data.blacklist, 1, clean)
-        _warn("[DontGrabMe] Blacklist +: " .. clean)
+        _rconsoleprint("[DontGrabMe] Blacklist +: " .. clean .. "\n")
     end,
 
     addWhitelist = function(domain)
@@ -483,13 +502,13 @@ _G.DontGrabMe = {
         if not data then return end
         local clean = sanitizeDomain(domain)
         if not clean then
-            _warn("[DontGrabMe] addWhitelist: некорректный домен")
+            _rconsoleprint("[DontGrabMe] addWhitelist: некорректный домен\n")
             return
         end
         for _, v in _ipairs(data.blacklist) do
             if matchDomain(clean, v) or matchDomain(v, clean) then
-                _warn("[DontGrabMe] addWhitelist: отклонено — "
-                    .. clean .. " конфликтует с blacklist")
+                _rconsoleprint("[DontGrabMe] addWhitelist: отклонено — "
+                    .. clean .. " конфликтует с blacklist\n")
                 return
             end
         end
@@ -497,7 +516,7 @@ _G.DontGrabMe = {
             if v == clean then return end
         end
         _table_insert(data.whitelist, clean)
-        _warn("[DontGrabMe] Whitelist +: " .. clean)
+        _rconsoleprint("[DontGrabMe] Whitelist +: " .. clean .. "\n")
     end,
 
     addSuspicious = function(domain)
@@ -505,14 +524,14 @@ _G.DontGrabMe = {
         if not data then return end
         local clean = sanitizeDomain(domain)
         if not clean then
-            _warn("[DontGrabMe] addSuspicious: некорректный домен")
+            _rconsoleprint("[DontGrabMe] addSuspicious: некорректный домен\n")
             return
         end
         for _, v in _ipairs(data.suspicious) do
             if v == clean then return end
         end
         _table_insert(data.suspicious, clean)
-        _warn("[DontGrabMe] Suspicious +: " .. clean)
+        _rconsoleprint("[DontGrabMe] Suspicious +: " .. clean .. "\n")
     end,
 
     removeBlacklist = function(domain)
@@ -523,7 +542,7 @@ _G.DontGrabMe = {
         for i, v in _ipairs(data.blacklist) do
             if v == clean then
                 _table_remove(data.blacklist, i)
-                _warn("[DontGrabMe] Blacklist -: " .. clean)
+                _rconsoleprint("[DontGrabMe] Blacklist -: " .. clean .. "\n")
                 return
             end
         end
@@ -537,7 +556,7 @@ _G.DontGrabMe = {
         for i, v in _ipairs(data.whitelist) do
             if v == clean then
                 _table_remove(data.whitelist, i)
-                _warn("[DontGrabMe] Whitelist -: " .. clean)
+                _rconsoleprint("[DontGrabMe] Whitelist -: " .. clean .. "\n")
                 return
             end
         end
@@ -551,7 +570,7 @@ _G.DontGrabMe = {
         for i, v in _ipairs(data.suspicious) do
             if v == clean then
                 _table_remove(data.suspicious, i)
-                _warn("[DontGrabMe] Suspicious -: " .. clean)
+                _rconsoleprint("[DontGrabMe] Suspicious -: " .. clean .. "\n")
                 return
             end
         end
@@ -568,11 +587,11 @@ _G.DontGrabMe = {
     stats = function()
         local data = getDataSafe()
         if not data then
-            _warn("[DontGrabMe] Данные недоступны")
+            _rconsoleprint("[DontGrabMe] Данные недоступны\n")
             return
         end
-        _warn(_string_format(
-            "[DontGrabMe] Blocked: %d | Suspicious: %d | Allowed: %d",
+        _rconsoleprint(_string_format(
+            "[DontGrabMe] Blocked: %d | Suspicious: %d | Allowed: %d\n",
             data.stats.blocked,
             data.stats.suspicious,
             data.stats.allowed
@@ -588,17 +607,17 @@ _G.DontGrabMe = {
                 _setreadonly(mt2, true)
             end)
             if ok then
-                _warn("[DontGrabMe] __namecall восстановлен")
+                _rconsoleprint("[DontGrabMe] __namecall восстановлен\n")
             else
-                _warn("[DontGrabMe] Не удалось восстановить __namecall")
+                _rconsoleprint("[DontGrabMe] Не удалось восстановить __namecall\n")
             end
         end
-        _G.DONT_GRAB_ME = nil
-        _warn("[DontGrabMe] Выгружен.")
-        _warn("[DontGrabMe] hookfunction-хуки активны (ограничение executor API).")
-        _warn("[DontGrabMe] Данные списков сохранены.")
+        getgenv().DONT_GRAB_ME = nil
+        _rconsoleprint("[DontGrabMe] Выгружен.\n")
+        _rconsoleprint("[DontGrabMe] hookfunction-хуки активны (ограничение executor API).\n")
+        _rconsoleprint("[DontGrabMe] Данные списков сохранены.\n")
     end,
 }
 
-_warn("[DontGrabMe v4.0] Активен.")
-_warn("[DontGrabMe] DontGrabMe.stats() — статистика.")
+_rconsoleprint("[DontGrabMe v4.0] Активен.\n")
+_rconsoleprint("[DontGrabMe] DontGrabMe.stats() — статистика.\n")
