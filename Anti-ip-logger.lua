@@ -2,9 +2,28 @@
 -- ║          DONT GRAB ME v4.0 FINAL            ║
 -- ╚══════════════════════════════════════════════╝
 
--- Убираем game:IsLoaded() с первой строки —
--- в Delta X loadstring-контексте game может быть Ugc
--- что вызывает ошибку при любом :Method() вызове
+-- Добавляем метод httpget на объект Ugc до любых
+-- других операций. Delta X или игра вызывает
+-- Ugc:httpget() в lowercase параллельно загрузке.
+-- Без этого блока вызов падает с ошибкой.
+-- Оба pcall независимы на случай разных контекстов.
+pcall(function()
+    if Ugc and type(Ugc) == "userdata"
+    and type(Ugc.httpget) ~= "function" then
+        Ugc.httpget = function() return "" end
+    end
+end)
+
+pcall(function()
+    if _G.Ugc and type(_G.Ugc) == "userdata"
+    and type(_G.Ugc.httpget) ~= "function" then
+        _G.Ugc.httpget = function() return "" end
+    end
+end)
+
+-- Проверка загрузки игры через pcall —
+-- в некоторых контекстах Delta X game может быть
+-- не настоящим DataModel на момент Line 1
 pcall(function()
     if not game:IsLoaded() then game.Loaded:Wait() end
 end)
