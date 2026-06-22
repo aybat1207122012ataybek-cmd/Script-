@@ -1,21 +1,11 @@
 -- ╔══════════════════════════════════════════════╗
 -- ║          DONT GRAB ME v4.0                  ║
 -- ╚══════════════════════════════════════════════╝
--- Изменения v4.0 относительно v3.9:
--- [FIX-1] string.gmatch кэширован как _string_gmatch
---         Защита от подмены string.gmatch до загрузки
--- [FIX-2] DONT_GRAB_ME_HOOKS проверяется через type()
---         Защита от runtime error при повреждении флага хуков
--- [FIX-3] normalizeHostname использует string.match
---         вместо цикла — одна операция вместо N итераций
 
 if not game:IsLoaded() then game.Loaded:Wait() end
 if getgenv().DONT_GRAB_ME then return end
 getgenv().DONT_GRAB_ME = true
 
--- ══════════════════════════════════════════════
--- Кэшируем критические функции при инициализации
--- ══════════════════════════════════════════════
 local _hookfunction      = hookfunction      or function(o, h) return o end
 local _newcclosure       = newcclosure       or function(fn) return fn end
 local _getrawmeta        = getrawmetatable   or getmetatable
@@ -37,15 +27,12 @@ local _string_sub        = string.sub
 local _string_char       = string.char
 local _string_lower      = string.lower
 local _string_len        = string.len
-local _string_gmatch     = string.gmatch  -- [FIX-1] кэшируем gmatch
+local _string_gmatch     = string.gmatch
 local _table_insert      = table.insert
 local _table_remove      = table.remove
 
 local HttpService = game:GetService("HttpService")
 
--- ══════════════════════════════════════════════
--- ЕДИНОЕ ХРАНИЛИЩЕ ДАННЫХ В getgenv()
--- ══════════════════════════════════════════════
 if not getgenv().DONT_GRAB_ME_DATA then
     getgenv().DONT_GRAB_ME_DATA = {
 
@@ -123,9 +110,6 @@ if not getgenv().DONT_GRAB_ME_DATA then
     for i, v in _ipairs(d.whitelist)  do d.whitelist[i]  = _string_lower(v) end
 end
 
--- ══════════════════════════════════════════════
--- ПРОВЕРКА ЦЕЛОСТНОСТИ ХРАНИЛИЩА
--- ══════════════════════════════════════════════
 local function getDataSafe()
     local data = getgenv().DONT_GRAB_ME_DATA
     if _type(data)            ~= "table" then return nil end
@@ -137,9 +121,6 @@ local function getDataSafe()
     return data
 end
 
--- ══════════════════════════════════════════════
--- ДЕКОДИРОВАНИЕ PERCENT-ENCODING
--- ══════════════════════════════════════════════
 local MAX_DECODE_ITER = 8
 
 local function decodePercent(s)
@@ -155,9 +136,6 @@ local function decodePercent(s)
     return s
 end
 
--- ══════════════════════════════════════════════
--- ВАЛИДАЦИЯ HOSTNAME
--- ══════════════════════════════════════════════
 local function validateHostname(hostname)
     if not hostname or hostname == "" then return nil end
     for i = 1, _string_len(hostname) do
@@ -165,11 +143,11 @@ local function validateHostname(hostname)
         local valid = (byte >= 48 and byte <= 57)
                    or (byte >= 65 and byte <= 90)
                    or (byte >= 97 and byte <= 122)
-                   or byte == 45   -- '-'
-                   or byte == 46   -- '.'
-                   or byte == 91   -- '[' IPv6
-                   or byte == 93   -- ']' IPv6
-                   or byte == 58   -- ':' IPv6
+                   or byte == 45
+                   or byte == 46
+                   or byte == 91
+                   or byte == 93
+                   or byte == 58
         if not valid then
             return nil
         end
@@ -177,25 +155,13 @@ local function validateHostname(hostname)
     return hostname
 end
 
--- ══════════════════════════════════════════════
--- НОРМАЛИЗАЦИЯ HOSTNAME
--- [FIX-3] string.match вместо цикла while
--- "grabify.link.." → "grabify.link"
--- ══════════════════════════════════════════════
 local function normalizeHostname(hostname)
     if not hostname then return nil end
-    -- Убираем все trailing dots одной операцией
-    -- "^(.-)%.+$" = минимальный захват до одной или более точек в конце
-    -- "^(.-)$" для строк без trailing dots = вся строка
     local result = _string_match(hostname, "^(.-)%.+$") or hostname
-    -- Если вся строка состоит из точек: "..." → result = "" → return nil
     if result == "" then return nil end
     return result
 end
 
--- ══════════════════════════════════════════════
--- ИЗВЛЕЧЕНИЕ HOSTNAME ИЗ URL
--- ══════════════════════════════════════════════
 local function extractHostname(url)
     if not url or _type(url) ~= "string" then return nil end
 
@@ -249,52 +215,29 @@ local function extractHostname(url)
     return validateHostname(normalized)
 end
 
--- ══════════════════════════════════════════════
--- ПРОВЕРКА НА ПРЯМОЙ IP-АДРЕС
--- ══════════════════════════════════════════════
 local function isRawIP(hostname)
     if not hostname then return false end
 
-    if _string_match(hostname, "^%d+%.%d+%.%d+%.%d+$") then
-        return true
-    end
-
-    if _string_match(hostname, "^%d+%.%d+%.%d+$") then
-        return true
-    end
-
-    if _string_match(hostname, "^%d+%.%d+$") then
-        return true
-    end
+    if _string_match(hostname, "^%d+%.%d+%.%d+%.%d+$") then return true end
+    if _string_match(hostname, "^%d+%.%d+%.%d+$") then return true end
+    if _string_match(hostname, "^%d+%.%d+$") then return true end
 
     if _string_match(hostname, "^%[.+%]$") then
         local inner = _string_sub(hostname, 2, -2)
-        if _string_find(inner, ":") then
-            return true
-        end
+        if _string_find(inner, ":") then return true end
     end
 
     if _string_match(hostname, "^%d+$") then
         local n = _tonumber(hostname)
-        if n and n >= 65536 and n <= 4294967295 then
-            return true
-        end
+        if n and n >= 65536 and n <= 4294967295 then return true end
     end
 
-    if _string_match(hostname, "^0[xX]%x+$") then
-        return true
-    end
-
-    if _string_match(hostname, "^0%d%d%d+$") then
-        return true
-    end
+    if _string_match(hostname, "^0[xX]%x+$") then return true end
+    if _string_match(hostname, "^0%d%d%d+$") then return true end
 
     return false
 end
 
--- ══════════════════════════════════════════════
--- СРАВНЕНИЕ ДОМЕНОВ
--- ══════════════════════════════════════════════
 local function matchDomain(hostname, rule)
     if not hostname or not rule or rule == "" then return false end
     if hostname == rule then return true end
@@ -302,9 +245,6 @@ local function matchDomain(hostname, rule)
     return false
 end
 
--- ══════════════════════════════════════════════
--- ВАЛИДАЦИЯ ДОМЕНОВ ДЛЯ ПУБЛИЧНОГО API
--- ══════════════════════════════════════════════
 local function sanitizeDomain(domain)
     if _type(domain) ~= "string" then return nil end
     domain = _string_match(domain, "^%s*(.-)%s*$")
@@ -318,9 +258,6 @@ local function sanitizeDomain(domain)
     return domain
 end
 
--- ══════════════════════════════════════════════
--- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
--- ══════════════════════════════════════════════
 local function recordStat(category)
     local data = getDataSafe()
     if not data then return end
@@ -338,62 +275,38 @@ local function Log(category, url)
     ))
 end
 
--- ══════════════════════════════════════════════
--- ОСНОВНАЯ ПРОВЕРКА URL
--- ══════════════════════════════════════════════
 local function checkURL(url)
     local data = getDataSafe()
-    if not data then
-        return "suspicious"
-    end
+    if not data then return "suspicious" end
 
     local hostname = extractHostname(url)
-
-    if not hostname then
-        return "suspicious"
-    end
-
-    if isRawIP(hostname) then
-        return "suspicious"
-    end
+    if not hostname then return "suspicious" end
+    if isRawIP(hostname) then return "suspicious" end
 
     for _, bad in _ipairs(data.blacklist) do
-        if matchDomain(hostname, bad) then
-            return "blocked"
-        end
+        if matchDomain(hostname, bad) then return "blocked" end
     end
 
     for _, safe in _ipairs(data.whitelist) do
-        if matchDomain(hostname, safe) then
-            return "allowed"
-        end
+        if matchDomain(hostname, safe) then return "allowed" end
     end
 
     for _, sus in _ipairs(data.suspicious) do
-        if matchDomain(hostname, sus) then
-            return "suspicious"
-        end
+        if matchDomain(hostname, sus) then return "suspicious" end
     end
 
     return "allowed"
 end
 
--- ══════════════════════════════════════════════
--- ОБРАБОТКА ЗАПРОСА
--- ══════════════════════════════════════════════
 local function handleCheck(url)
-    if not url or _type(url) ~= "string" then
-        return "allowed"
-    end
+    if not url or _type(url) ~= "string" then return "allowed" end
     local result = checkURL(url)
     recordStat(result)
     Log(result, url)
     return result
 end
 
--- ══════════════════════════════════════════════
 -- ХУК __NAMECALL
--- ══════════════════════════════════════════════
 local mt = _getrawmeta(game)
 local oldNamecall = mt.__namecall
 local namecallHookOk = false
@@ -405,10 +318,14 @@ do
             local ok, result = _pcall(function()
                 local method = _getnamecallmethod()
                 if method == "HttpGet" or method == "HttpGetAsync" then
-                    local args = {...}
-                    local url = args[1]
-                    if handleCheck(url) == "blocked" then
-                        return "Blocked by DontGrabMe"
+                    -- ИСПРАВЛЕНИЕ: проверяем что self == game
+                    -- без этого хук ломал :HttpGet() на других объектах
+                    if self == game then
+                        local args = {...}
+                        local url = args[1]
+                        if handleCheck(url) == "blocked" then
+                            return "Blocked by DontGrabMe"
+                        end
                     end
                 end
                 return oldNamecall(self, ...)
@@ -429,9 +346,7 @@ do
     end
 end
 
--- ══════════════════════════════════════════════
--- ХУК RequestAsync (опциональный)
--- ══════════════════════════════════════════════
+-- ХУК RequestAsync
 local function tryHookRequestAsync()
     if typeof(HttpService.RequestAsync) ~= "function" then return end
     local ok = _pcall(function()
@@ -457,16 +372,12 @@ end
 
 tryHookRequestAsync()
 
--- ══════════════════════════════════════════════
--- ПОИСК ВЛОЖЕННЫХ EXECUTOR API
--- [FIX-1] Использует кэшированный _string_gmatch
--- ══════════════════════════════════════════════
+-- ХУКИ EXECUTOR ФУНКЦИЙ
 local function getNestedFn(path)
     local ok, env = _pcall(_getfenv, 0)
     if not ok or _type(env) ~= "table" then return nil end
 
     local parts = {}
-    -- [FIX-1] Используем _string_gmatch вместо path:gmatch
     for part in _string_gmatch(path, "[^%.]+") do
         _table_insert(parts, part)
     end
@@ -488,18 +399,11 @@ local function getNestedFn(path)
     return current
 end
 
--- ══════════════════════════════════════════════
--- ХУКИ ФУНКЦИЙ EXECUTOR'А
--- [FIX-2] Проверка типа DONT_GRAB_ME_HOOKS
--- ══════════════════════════════════════════════
-
--- [FIX-2] type() вместо простой проверки на nil
 if _type(getgenv().DONT_GRAB_ME_HOOKS) ~= "table" then
     getgenv().DONT_GRAB_ME_HOOKS = {}
 end
 
 local function hookExecutorRequest(fnName)
-    -- [FIX-2] Дополнительная проверка при каждом вызове
     if _type(getgenv().DONT_GRAB_ME_HOOKS) ~= "table" then
         getgenv().DONT_GRAB_ME_HOOKS = {}
     end
@@ -544,9 +448,7 @@ hookExecutorRequest("syn.request")
 hookExecutorRequest("fluxus.request")
 hookExecutorRequest("http.request")
 
--- ══════════════════════════════════════════════
 -- ПУБЛИЧНЫЙ API
--- ══════════════════════════════════════════════
 getgenv().DontGrabMe = {
 
     addBlacklist = function(domain)
@@ -679,12 +581,10 @@ getgenv().DontGrabMe = {
                 _rconsoleprint("[DontGrabMe] Не удалось восстановить __namecall\n")
             end
         end
-
         getgenv().DONT_GRAB_ME = nil
-
-        _rconsoleprint("[DontGrabMe] Выгружен. __namecall восстановлен.\n")
+        _rconsoleprint("[DontGrabMe] Выгружен.\n")
         _rconsoleprint("[DontGrabMe] hookfunction-хуки активны (ограничение executor API).\n")
-        _rconsoleprint("[DontGrabMe] Данные списков сохранены для повторного запуска.\n")
+        _rconsoleprint("[DontGrabMe] Данные списков сохранены.\n")
     end,
 }
 
