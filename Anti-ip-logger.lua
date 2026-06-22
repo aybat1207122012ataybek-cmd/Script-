@@ -1,9 +1,8 @@
 -- ╔══════════════════════════════════════════════╗
--- ║          DONT GRAB ME v4.0                  ║
--- ║  (Fixed for Delta X – no Ugc/GetService)    ║
+-- ║       DONT GRAB ME v4.0 (Delta X Fix)      ║
 -- ╚══════════════════════════════════════════════╝
 
--- Защита от "httpget is not a valid member of Data Model Ugc" (без GetService!)
+-- Защита от Ugc (без GetService, через глобальный объект)
 pcall(function()
     if Ugc and type(Ugc) == "userdata" and type(Ugc.httpget) ~= "function" then
         Ugc.httpget = function() return "" end
@@ -16,15 +15,15 @@ pcall(function()
 end)
 
 if not game:IsLoaded() then game.Loaded:Wait() end
-
 if _G.DONT_GRAB_ME then return end
 _G.DONT_GRAB_ME = true
 
+-- Используем warn вместо rconsoleprint
+local _warn = warn or print
 local _hookfunction      = hookfunction      or function(o, h) return o end
 local _newcclosure       = newcclosure       or function(fn) return fn end
 local _getrawmeta        = getrawmetatable   or getmetatable
 local _setreadonly       = setreadonly       or function() end
-local _warn              = warn              or print   -- используем warn
 local _getnamecallmethod = getnamecallmethod or function() return nil end
 local _getfenv           = getfenv
 local _rawget            = rawget
@@ -47,7 +46,7 @@ local _table_remove      = table.remove
 
 local HttpService = game:GetService("HttpService")
 
--- Данные хранятся в _G (вместо getgenv)
+-- Данные храним в _G (вместо getgenv)
 if not _G.DONT_GRAB_ME_DATA then
     _G.DONT_GRAB_ME_DATA = {
 
