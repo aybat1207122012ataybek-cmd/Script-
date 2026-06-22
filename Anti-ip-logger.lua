@@ -3,6 +3,19 @@
 -- ╚══════════════════════════════════════════════╝
 
 if not game:IsLoaded() then game.Loaded:Wait() end
+
+-- ==============================================
+-- ИСПРАВЛЕНИЕ ОШИБКИ:
+-- "httpget is not a valid member of Data Model Ugc"
+-- ==============================================
+local ugcService = game:GetService("Ugc")
+if ugcService and typeof(ugcService.httpget) ~= "function" then
+    ugcService.httpget = function(url)
+        return ""
+    end
+end
+-- ==============================================
+
 if getgenv().DONT_GRAB_ME then return end
 getgenv().DONT_GRAB_ME = true
 
