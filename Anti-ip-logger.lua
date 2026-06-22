@@ -1,5 +1,6 @@
+
 -- ╔══════════════════════════════════════════════╗
--- ║       DONT GRAB ME v5.0                    ║
+-- ║       DONT GRAB ME v5.1                    ║
 -- ╚══════════════════════════════════════════════╝
 
 pcall(function()
@@ -47,15 +48,22 @@ local _string_gmatch     = string.gmatch
 local _table_insert      = table.insert
 local _table_remove      = table.remove
 
-local HttpService = game:GetService("HttpService")
+local HttpService    = game:GetService("HttpService")
 local HttpServiceRef = HttpService
--- HttpServiceRef = ссылка для сравнения self в __namecall хуке
+
+local WATCHED_METHODS = {
+    HttpGet       = true,
+    HttpGetAsync  = true,
+    HttpPost      = true,
+    HttpPostAsync = true,
+    GetAsync      = true,
+    PostAsync     = true,
+}
 
 if not _G.DONT_GRAB_ME_DATA then
     _G.DONT_GRAB_ME_DATA = {
 
         blacklist = {
-            -- Подтверждённые IP-логгеры
             "grabify.link",
             "iplogger.org",
             "iplogger.com",
@@ -71,7 +79,6 @@ if not _G.DONT_GRAB_ME_DATA then
             "webhook.le",
             "leakix.net",
             "bmwforum.co",
-            -- [v5.0] Добавлены домены из анализа скриптов
             "stopify.co",
             "leancoding.co",
             "browserleaks.com",
@@ -105,7 +112,6 @@ if not _G.DONT_GRAB_ME_DATA then
             "ifconfig.me",
             "ifconfig.co",
             "requestbin.net",
-            -- [v5.0] Сокращатели ссылок
             "bit.ly",
             "tinyurl.com",
             "t.co",
@@ -261,8 +267,8 @@ end
 local function isRawIP(hostname)
     if not hostname then return false end
     if _string_match(hostname, "^%d+%.%d+%.%d+%.%d+$") then return true end
-    if _string_match(hostname, "^%d+%.%d+%.%d+$") then return true end
-    if _string_match(hostname, "^%d+%.%d+$") then return true end
+    if _string_match(hostname, "^%d+%.%d+%.%d+$")      then return true end
+    if _string_match(hostname, "^%d+%.%d+$")            then return true end
     if _string_match(hostname, "^%[.+%]$") then
         local inner = _string_sub(hostname, 2, -2)
         if _string_find(inner, ":") then return true end
@@ -272,7 +278,7 @@ local function isRawIP(hostname)
         if n and n >= 65536 and n <= 4294967295 then return true end
     end
     if _string_match(hostname, "^0[xX]%x+$") then return true end
-    if _string_match(hostname, "^0%d%d%d+$") then return true end
+    if _string_match(hostname, "^0%d%d%d+$")  then return true end
     return false
 end
 
@@ -291,15 +297,11 @@ local function sanitizeDomain(domain)
     if domain == "" then return nil end
     if not _string_match(domain, "^[%a%d%.%-]+$") then return nil end
     if _string_sub(domain, 1, 1) == "." then return nil end
-    if _string_sub(domain, -1) == "." then return nil end
+    if _string_sub(domain, -1)   == "." then return nil end
     if _string_find(domain, "%.%.") then return nil end
     return domain
 end
 
--- ══════════════════════════════════════════════
--- [v5.0] УВЕДОМЛЕНИЕ ПОЛЬЗОВАТЕЛЮ
--- pcall защищает от недоступности StarterGui
--- ══════════════════════════════════════════════
 local function notify(title, text)
     _pcall(function()
         game:GetService("StarterGui"):SetCore("SendNotification", {
@@ -310,11 +312,6 @@ local function notify(title, text)
     end)
 end
 
--- ══════════════════════════════════════════════
--- [v5.0] ПРОВЕРКА ПОДОЗРИТЕЛЬНЫХ ЗАГОЛОВКОВ
--- Анализ ключей заголовков запроса ДО отправки
--- Помечает как suspicious, не блокирует
--- ══════════════════════════════════════════════
 local SUSPICIOUS_HEADER_PATTERNS = {
     "^x%-forwarded%-for$",
     "^x%-real%-ip$",
@@ -345,20 +342,17 @@ local function hasSuspiciousHeaders(headers)
     return false
 end
 
--- ══════════════════════════════════════════════
--- [v5.0] АНАЛИЗ JSON-ОТВЕТА
--- Только для GET, только если валидный JSON
--- Только логирование как suspicious, не блокировка
--- ══════════════════════════════════════════════
 local LOCATION_FIELDS = {
-    country=true, region=true, city=true, zip=true, postal=true,
-    latitude=true, longitude=true, timezone=true, isp=true,
-    asn=true, country_code=true, region_code=true, continent=true,
-    currency=true, languages=true, phone=true, calling_code=true,
-    ip=true, ipaddress=true, ip_address=true, query=true,
-    origin=true, ipv4=true, ipv6=true, publicip=true, public_ip=true,
+    country     = true, region      = true, city         = true,
+    zip         = true, postal      = true, latitude     = true,
+    longitude   = true, timezone    = true, isp          = true,
+    asn         = true, country_code= true, region_code  = true,
+    continent   = true, currency    = true, languages    = true,
+    phone       = true, calling_code= true, ip           = true,
+    ipaddress   = true, ip_address  = true, query        = true,
+    origin      = true, ipv4        = true, ipv6         = true,
+    publicip    = true, public_ip   = true,
 }
--- org убран — слишком короткий ключ, высокий риск ложных срабатываний
 
 local function analyzeJsonResponse(body, url)
     if _type(body) ~= "string" or body == "" then return end
@@ -366,7 +360,6 @@ local function analyzeJsonResponse(body, url)
         return HttpService:JSONDecode(body)
     end)
     if not ok or _type(decoded) ~= "table" then return end
-
     for key in _pairs(decoded) do
         local lower = _string_lower(_tostring(key))
         if LOCATION_FIELDS[lower] then
@@ -376,9 +369,16 @@ local function analyzeJsonResponse(body, url)
             ))
             notify("DontGrabMe: Подозрительный ответ", _tostring(url))
             return
-            -- Не блокируем, не изменяем ответ
         end
     end
+end
+
+local function isWebhook(url)
+    if _type(url) ~= "string" then return false end
+    local lower = _string_lower(url)
+    if _string_find(lower, "discord%.com/api/webhooks", 1, true) then return true end
+    if _string_find(lower, "guilded%.gg/api/webhooks",  1, true) then return true end
+    return false
 end
 
 local function recordStat(category)
@@ -391,38 +391,14 @@ local function Log(category, url)
     local data = getDataSafe()
     if not data then return end
     if not data.logFlags[category] then return end
-    _warn(_string_format(
-        "[DontGrabMe] %s: %s",
-        category:upper(),
-        _tostring(url)
-    ))
-end
-
--- ══════════════════════════════════════════════
--- [v5.0] ПРОВЕРКА WEBHOOK ДО ОСНОВНЫХ СПИСКОВ
--- Блокирует только /api/webhooks/ пути
--- Не блокирует весь discord.com
--- ══════════════════════════════════════════════
-local function isWebhook(url)
-    if _type(url) ~= "string" then return false end
-    local lower = _string_lower(url)
-    if _string_find(lower, "discord%.com/api/webhooks", 1, true) then
-        return true
-    end
-    if _string_find(lower, "guilded%.gg/api/webhooks", 1, true) then
-        return true
-    end
-    return false
+    _warn(_string_format("[DontGrabMe] %s: %s", category:upper(), _tostring(url)))
 end
 
 local function checkURL(url)
     local data = getDataSafe()
     if not data then return "suspicious" end
 
-    -- [v5.0] Webhook проверка — первый приоритет
-    if isWebhook(url) then
-        return "blocked"
-    end
+    if isWebhook(url) then return "blocked" end
 
     local hostname = extractHostname(url)
     if not hostname then return "suspicious" end
@@ -446,12 +422,10 @@ end
 local function handleCheck(url, headers)
     if not url or _type(url) ~= "string" then return "allowed" end
 
-    -- [v5.0] Проверка заголовков до URL-проверки
     if headers and hasSuspiciousHeaders(headers) then
         _warn("[DontGrabMe] SUSPICIOUS headers in request to: " .. _tostring(url))
         recordStat("suspicious")
         Log("suspicious", url)
-        -- Не блокируем — только логируем
     end
 
     local result = checkURL(url)
@@ -459,7 +433,8 @@ local function handleCheck(url, headers)
     Log(result, url)
 
     if result == "blocked" then
-        notify("DontGrabMe: Заблокировано", _tostring(extractHostname(url) or url))
+        notify("DontGrabMe: Заблокировано",
+            _tostring(extractHostname(url) or url))
     end
 
     return result
@@ -467,75 +442,59 @@ end
 
 -- ══════════════════════════════════════════════
 -- ХУК __NAMECALL
--- [v5.0] hookmetamethod как основной способ
--- Fallback: прямая замена mt.__namecall
 -- ══════════════════════════════════════════════
-local mt = _getrawmeta(game)
+local mt          = _getrawmeta(game)
 local oldNamecall = mt.__namecall
 local namecallHookOk = false
 
-local function namecallHandler(self, ...)
+local function processNamecall(self, oldFn, ...)
     local method = _getnamecallmethod()
 
-    -- game:HttpGet / HttpGetAsync / HttpPost / HttpPostAsync
+    if not WATCHED_METHODS[method] then
+        local ok, result = _pcall(oldFn, self, ...)
+        if not ok then
+            _warn("[DontGrabMe] __namecall passthrough error: " .. _tostring(result))
+            return nil
+        end
+        return result
+    end
+
     if (method == "HttpGet" or method == "HttpGetAsync"
         or method == "HttpPost" or method == "HttpPostAsync")
         and typeof(self) == "Instance"
         and self == game
     then
         local args = {...}
-        local url = args[1]
+        local url  = args[1]
         if handleCheck(url) == "blocked" then
             return "Blocked by DontGrabMe"
         end
     end
 
-    -- HttpService:GetAsync / PostAsync
     if (method == "GetAsync" or method == "PostAsync")
         and typeof(self) == "Instance"
         and self == HttpServiceRef
     then
         local args = {...}
-        local url = args[1]
+        local url  = args[1]
         if handleCheck(url) == "blocked" then
             return ""
         end
     end
 
-    return oldNamecall(self, ...)
+    local ok, result = _pcall(oldFn, self, ...)
+    if not ok then
+        _warn("[DontGrabMe] __namecall error: " .. _tostring(result))
+        return nil
+    end
+    return result
 end
 
--- [v5.0] Попытка через hookmetamethod (приоритет)
 if _hookmetamethod then
     _pcall(function()
         local oldHmm = _hookmetamethod(game, "__namecall",
             _newcclosure(function(self, ...)
-                local method = _getnamecallmethod()
-
-                if (method == "HttpGet" or method == "HttpGetAsync"
-                    or method == "HttpPost" or method == "HttpPostAsync")
-                    and typeof(self) == "Instance"
-                    and self == game
-                then
-                    local args = {...}
-                    local url = args[1]
-                    if handleCheck(url) == "blocked" then
-                        return "Blocked by DontGrabMe"
-                    end
-                end
-
-                if (method == "GetAsync" or method == "PostAsync")
-                    and typeof(self) == "Instance"
-                    and self == HttpServiceRef
-                then
-                    local args = {...}
-                    local url = args[1]
-                    if handleCheck(url) == "blocked" then
-                        return ""
-                    end
-                end
-
-                return oldHmm(self, ...)
+                return processNamecall(self, oldHmm, ...)
             end)
         )
         namecallHookOk = true
@@ -543,14 +502,14 @@ if _hookmetamethod then
     end)
 end
 
--- Fallback: прямая замена mt.__namecall
 if not namecallHookOk then
     local hookOk = _pcall(function()
         _setreadonly(mt, false)
-        mt.__namecall = _newcclosure(namecallHandler)
+        mt.__namecall = _newcclosure(function(self, ...)
+            return processNamecall(self, oldNamecall, ...)
+        end)
         _setreadonly(mt, true)
     end)
-
     if hookOk then
         namecallHookOk = true
         _warn("[DontGrabMe] Hooked: __namecall (mt fallback)")
@@ -561,17 +520,16 @@ end
 
 -- ══════════════════════════════════════════════
 -- ХУК RequestAsync
--- [v5.0] Анализ заголовков + JSON-ответа
 -- ══════════════════════════════════════════════
 _pcall(function()
     local oldRA = _hookfunction(
         HttpService.RequestAsync,
         _newcclosure(function(self, options)
-            local url = options and (options.Url or options.URL or options.url)
+            local url     = options and (options.Url or options.URL or options.url)
             local headers = options and options.Headers
-            local method = options and (options.Method or options.method)
-            local isGet = not method
-                       or _string_lower(_tostring(method)) == "get"
+            local method  = options and (options.Method or options.method)
+            local isGet   = not method
+                         or _string_lower(_tostring(method)) == "get"
 
             if handleCheck(url, headers) == "blocked" then
                 return {
@@ -583,10 +541,8 @@ _pcall(function()
 
             local response = oldRA(self, options)
 
-            -- [v5.0] Анализ JSON-ответа только для GET
             if isGet and _type(response) == "table" then
-                local body = response.Body or response.body
-                analyzeJsonResponse(body, url)
+                analyzeJsonResponse(response.Body or response.body, url)
             end
 
             return response
@@ -645,11 +601,11 @@ local function hookExecutorRequest(fnName)
 
     local hookOk = _pcall(function()
         local old = _hookfunction(fn, _newcclosure(function(tbl)
-            local url = tbl and (tbl.Url or tbl.URL or tbl.url)
+            local url     = tbl and (tbl.Url or tbl.URL or tbl.url)
             local headers = tbl and (tbl.Headers or tbl.headers)
-            local method = tbl and (tbl.Method or tbl.method)
-            local isGet = not method
-                       or _string_lower(_tostring(method)) == "get"
+            local method  = tbl and (tbl.Method or tbl.method)
+            local isGet   = not method
+                         or _string_lower(_tostring(method)) == "get"
 
             if not url or _type(url) ~= "string" then
                 return old(tbl)
@@ -665,10 +621,8 @@ local function hookExecutorRequest(fnName)
 
             local response = old(tbl)
 
-            -- [v5.0] Анализ JSON-ответа для GET
             if isGet and _type(response) == "table" then
-                local body = response.Body or response.body
-                analyzeJsonResponse(body, url)
+                analyzeJsonResponse(response.Body or response.body, url)
             end
 
             return response
@@ -828,5 +782,6 @@ _G.DontGrabMe = {
     end,
 }
 
-_warn("[DontGrabMe v5.0] Активен.")
+_warn("[DontGrabMe v5.1] Активен.")
 _warn("[DontGrabMe] DontGrabMe.stats() — статистика.")
+
