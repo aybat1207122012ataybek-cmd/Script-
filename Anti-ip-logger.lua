@@ -2,7 +2,13 @@
 -- ║          DONT GRAB ME v4.0 FINAL            ║
 -- ╚══════════════════════════════════════════════╝
 
-if not game:IsLoaded() then game.Loaded:Wait() end
+-- Убираем game:IsLoaded() с первой строки —
+-- в Delta X loadstring-контексте game может быть Ugc
+-- что вызывает ошибку при любом :Method() вызове
+pcall(function()
+    if not game:IsLoaded() then game.Loaded:Wait() end
+end)
+
 if getgenv().DONT_GRAB_ME then return end
 getgenv().DONT_GRAB_ME = true
 
@@ -306,13 +312,6 @@ local function handleCheck(url)
     return result
 end
 
--- ══════════════════════════════════════════════
--- ХУК __NAMECALL
--- Структура из рабочей версии: без двойного pcall
--- Одиночный вызов oldNamecall — ошибки от других
--- объектов (Ugc и т.д.) проходят как обычно
--- и не создают дополнительных проблем
--- ══════════════════════════════════════════════
 local mt = _getrawmeta(game)
 local oldNamecall = mt.__namecall
 local namecallHookOk = false
@@ -328,9 +327,6 @@ do
                 and typeof(self) == "Instance"
                 and self == game
             then
-                -- Проверяем только вызовы именно на game
-                -- Ugc:HttpGet() и любые другие объекты
-                -- не попадают в эту ветку и уходят в oldNamecall
                 local args = {...}
                 local url = args[1]
                 if handleCheck(url) == "blocked" then
@@ -338,9 +334,6 @@ do
                 end
             end
 
-            -- Одиночный вызов оригинала без дополнительных обёрток
-            -- Это ключевое отличие от предыдущей версии
-            -- Ошибки от других объектов идут своим путём
             return oldNamecall(self, ...)
         end)
 
@@ -355,9 +348,6 @@ do
     end
 end
 
--- ══════════════════════════════════════════════
--- ХУК RequestAsync (опциональный)
--- ══════════════════════════════════════════════
 _pcall(function()
     local oldRA = _hookfunction(
         HttpService.RequestAsync,
@@ -375,11 +365,6 @@ _pcall(function()
     )
 end)
 
--- ══════════════════════════════════════════════
--- ХУКИ EXECUTOR ФУНКЦИЙ
--- getNestedFn корректно ищет syn.request и другие
--- вложенные API через двухуровневый доступ
--- ══════════════════════════════════════════════
 local function getNestedFn(path)
     local ok, env = _pcall(_getfenv, 0)
     if not ok or _type(env) ~= "table" then return nil end
@@ -421,8 +406,6 @@ local function hookExecutorRequest(fnName)
 
     local hookOk = _pcall(function()
         local old = _hookfunction(fn, _newcclosure(function(tbl)
-            -- Используем old (оригинал), а не fn
-            -- fn вызвал бы рекурсию
             local url = tbl and (tbl.Url or tbl.URL or tbl.url)
             if not url or _type(url) ~= "string" then
                 return old(tbl)
@@ -452,9 +435,6 @@ hookExecutorRequest("syn.request")
 hookExecutorRequest("fluxus.request")
 hookExecutorRequest("http.request")
 
--- ══════════════════════════════════════════════
--- ПУБЛИЧНЫЙ API
--- ══════════════════════════════════════════════
 getgenv().DontGrabMe = {
 
     addBlacklist = function(domain)
