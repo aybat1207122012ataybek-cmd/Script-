@@ -1,5 +1,11 @@
 local CoreGui = (gethui and gethui()) or game:GetService("CoreGui")
 
+getgenv().image = ""
+getgenv().sidebar_settings = ""
+getgenv().sidebar_scripthub = ""
+getgenv().sidebar_home = ""
+getgenv().sidebar_executor = ""
+getgenv().sidebar_console = ""
 
 local function replaceWatermark(gui)
     for _, obj in ipairs(gui:GetDescendants()) do
