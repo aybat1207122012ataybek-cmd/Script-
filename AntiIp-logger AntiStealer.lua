@@ -1,178 +1,165 @@
 -- ═══════════════════════════════════════════════════════════════════════
---  ANTI IP LOGGER + ANTI STEALER  |  v2.1.5  «Pickle Rick Edition»
---  Три фичи:
---   • ANTI IP LOGGER — блокирует утечку IP через HTTP/WebSocket-запросы
---     на известные логгер/трекер-домены, подчищает ответы.
---   • ANTI STEALER — cookie guard, loadstring scan, anti-kick.
---   • ANTI ROBUX/ABUSE — блокирует попытки скриптов ложно репортнуть тебя
---     (ReportAbuse) и показать промпт покупки Robux без твоего ведома.
---
---  ИЗМЕНЕНИЯ В v2.1.0 (идеи взяты из стороннего скрипта RoTotal, но
---  реализованы заново под нашу архитектуру — без UI с кнопками Allow/
---  Block, в стиле "автоблок + подробный лог", как остальной скрипт):
---
---   • ANTI REPORT ABUSE: блокирует Players:ReportAbuse(), вызванный из
---     Lua/loadstring — защита от скриптов, которые могли бы ложно
---     репортнуть тебя администрации игры.
---
---   • ANTI ROBUX PROMPT: блокирует MarketplaceService:PromptPurchase /
---     PromptGamePassPurchase / PromptProductPurchase / PromptBundlePurchase
---     / PromptPremiumPurchase / PromptSubscriptionPurchase / PerformPurchase
---     / PerformPurchaseV2, если их вызывает Lua-скрипт, а не движок.
---     ВАЖНО (честно): это НЕ защита от уже подтверждённой тобой покупки —
---     Roblox физически не позволяет скрипту завершить покупку Robux без
---     твоего явного клика в НАТИВНОМ окне подтверждения. Наша защита —
---     это блокировка самого ЗАПРОСА на показ такого окна плюс подробный
---     лог (владелец товара, цена через MarketplaceService:GetProductInfo),
---     чтобы подозрительный промпт вообще не появился у тебя перед глазами.
---
---  ИЗМЕНЕНИЯ В v2.1.1 — КРИТИЧНО:
---   • Полностью убран ANTI-BYPASS (перехват hookfunction/clonefunction на
---     самих себе, чтобы защитить остальные хуки от снятия). На Android
---     (как минимум на одном executor'е) это вызвало реальный краш
---     клиента (SIGSEGV) — стектрейс показывал бесконечную рекурсию,
---     характерную именно для самохука hookfunction через hookfunction:
---     на некоторых executor'ах внутренняя реализация при установке хука
---     сама обращается к hookfunction, а мы к этому моменту уже подменили
---     глобальную ссылку на свою версию — зацикливание на нативном уровне,
---     которое pcall не ловит и не может остановить. Если ты обновлялся с
---     v2.1.0 — обязательно замени файл на эту версию.
---
---  ИЗМЕНЕНИЯ В v2.1.2:
---   • ИСПРАВЛЕНО (важно): ANTI ROBUX PROMPT раньше блокировал ЛЮБОЙ вызов
---     Prompt*Purchase, если он шёл не с C-стороны движка. Проблема: в
---     обычных играх Roblox эти методы штатно вызываются из LocalScript
---     самой игры (клик "купить" в магазине) — это официальный способ,
---     а не что-то подозрительное. Из-за этого блокировались ВСЕ покупки
---     во ВСЕХ играх, а не только скрытые попытки от вредоносных скриптов.
---     Теперь вызов пропускается, если он идёт из реального скрипта игры
---     (Instance, лежащий в дереве game), и блокируется только код без
---     такого происхождения — типичный признак loadstring/инжекта.
---   • ИСПРАВЛЕНО: sanitizeBody раньше заменял любую подстроку вида
---     "N.N.N.N" в ЛЮБОМ теле ответа, включая ответы от доменов из
---     белого списка — рискуя испортить легитимные данные (версии,
---     координаты и т.п.), случайно похожие на IP. Теперь ответы от
---     доменов из _whitelist не трогаются.
---   • Известное ограничение осталось прежним: анти-байпас (защита самих
---     хуков от снятия) по-прежнему убран из-за краша на Android — см.
---     запись v2.1.1 выше. Это не изменилось в этой версии.
---
---  ИЗМЕНЕНИЯ В v2.1.3:
---   • Добавлен EXACT_DOMAIN_SET — 242 точных домена из курируемой части
---     Piperun's IP-Logger Filter (github.com/piperun/iploggerfilter),
---     не дублирующие уже покрытые ключевые слова из BLACKLIST. Проверка
---     O(1) через hash-таблицу, не влияет на скорость существующих циклов.
---   • НЕ включены массовые списки "Blazse Loggers"/"PS3CFW Loggers" из
---     того же фильтр-листа (~680 доменов, последнее обновление 2020) —
---     это старые списки взломанных обычных сайтов, собранные для
---     контекста браузерного ad-block'а. В контексте Roblox-скрипта их
---     добавление не даёт ощутимой защиты (такие URL почти никогда не
---     встретятся в реальном трафике игр), зато со временем часть таких
---     доменов освобождается и переходит к никак не связанным владельцам —
---     то есть чистый риск ложных срабатываний без реальной пользы взамен.
---
---  ИЗМЕНЕНИЯ В v2.1.4 (по итогам разбора 8 живых семплов стилеров):
---   • ЗАКРЫТА ГЛАВНАЯ ДЫРА: блокировка webhook-релеев (_block_relay_hosts).
---     Раньше скрипт блокировал POST на discord.com/api/webhooks — но ни
---     один из разобранных семплов туда напрямую и не ходит. Все они шлют
---     данные на СВОЙ маленький релей на бесплатном хостинге
---     (proxykoyeb.onrender.com, rubix-scanner.vercel.app,
---     proxy-plum-beta.vercel.app), а тот уже пересылает в Discord.
---     Для старой версии это был обычный POST на незнакомый домен — то
---     есть защита от webhook'ов не срабатывала на них вообще ни разу.
---     Теперь POST на *.vercel.app, *.onrender.com, *.workers.dev и ещё
---     ~20 подобных платформ блокируется. ЭТО ЭВРИСТИКА, не список
---     known-bad: часть легитимных скриптов хостит свои API там же.
---     Ложняк лечится добавлением домена в _whitelist.
---   • Блокировка голых IPv4-хостов (_block_bare_ip). В семплах живьём
---     встречались эндпоинты вида http://93.183.83.94:8000/webhook/... и
---     http://180.93.3.83:4800/script/... — у сырого IP нет домена,
---     который можно внести в блок-лист, и он не палится в чужих списках.
---     Локальные адреса (127.*, 10.*, 192.168.*, 172.16-31.*) не трогаются.
---   • Добавлены точные exfil-хосты из семплов (KnownExfilHosts) и новые
---     маркеры конфигов загрузчиков в ENV_INJECTION_MARKERS.
---
---  ЧЕГО ЭТА ВЕРСИЯ ПО-ПРЕЖНЕМУ НЕ ДЕЛАЕТ (важно понимать):
---   • Все 8 разобранных стилеров — тонкие загрузчики: они прописывают
---     конфиг в getfenv()/_G и делают loadstring(HttpGet(url))(). Внутри
---     самого загрузчика вредоносного кода НЕТ, только ссылка. Поэтому
---     скан исходника по «плохим словам» ловит их плохо, и основная
---     защита — сетевая, по URL. А URL меняется за минуту: достаточно
---     перезалить релей на новый поддомен. Блокировка доменов защищает
---     в основном от старых, уже засвеченных скриптов.
---   • Анти-байпас по-прежнему убран (краш на Android, см. v2.1.1):
---     любой скрипт, запущенный ПОСЛЕ этого, может перехукать request/
---     __namecall/loadstring заново и снять защиту целиком.
---   • Вывод: это снижает риск, но не заменяет главное правило —
---     не запускать скрипты из случайных источников.
---
---  ИЗМЕНЕНИЯ В v2.1.5 «Pickle Rick Edition»:
---   • Иконка уведомлений — Огурчик Рик (rbxassetid://83768500686029).
---     Меняется через getgenv()._icon_asset.
---   • ИСПРАВЛЕН ЛОЖНЯК НА «STEAL A BRAINROT» И ТРЕЙД-ИГРАХ
---     (_game_context_aware). Раньше слова "steal"/"trade"/"brainrot" в
---     коде считались подозрительными. Но есть огромные легальные игры,
---     где это просто название и механика — там ЛЮБОЙ нормальный скрипт
---     содержит эти слова. Теперь скрипт читает название текущей игры, и
---     если слово есть в названии — в этой игре оно уликой не считается.
---     Жёсткие сигнатуры (cookie, authticket, exfil-домены) НЕ подавляются
---     никогда и ни в какой игре — иначе стилеру хватило бы запуститься
---     в игре с подходящим названием.
---   • ЛЕГИТИМНЫЕ WEBHOOK'И БОЛЬШЕ НЕ ЛОМАЮТСЯ. Раньше блокировался любой
---     webhook. Но куча нормальных скриптов шлёт в свой Discord рекорды и
---     статистику. Теперь решение принимается ПО СОДЕРЖИМОМУ тела:
---     cookie / authticket / hwid / опись инвентаря = блок;
---     счёт, время, уровень, «скрипт запущен» = пропуск.
---     Кому спокойнее по-старому — getgenv()._strict_webhook = true.
---     Та же логика применена к релей-хостам из v2.1.4.
---   • ФОРЕНЗИКА КИКА (_kick_forensics). Стилер обычно кикает сразу после
---     кражи, чтобы жертва не увидела пропажу и не отменила трейд. Кик мы
---     и так блокируем — теперь в этот момент в консоль выводится журнал
---     последних 25 заблокированных действий и напоминание немедленно
---     проверить инвентарь и входящие трейды.
---
---  ЧЕСТНО О ГЛАВНОМ ОГРАНИЧЕНИИ (внутриигровая кража предметов):
---   Универсально защитить от кражи предметов ВНУТРИ игры невозможно, и
---   ни один скрипт этого не умеет — включая этот. Причина: кража идёт
---   через обычные RemoteEvent'ы самой игры, те же самые, которыми ты
---   пользуешься при настоящем трейде. Вызов «отдать предмет игроку X»
---   выглядит одинаково и когда это твой осознанный обмен, и когда это
---   стилер. Отличить можно было бы, только зная логику каждой игры
---   отдельно — а игр миллионы, и в каждой свои remote'ы.
---   Что этот скрипт реально закрывает: кражу КУКИ/ТОКЕНОВ и утечку IP
---   (сетевой слой — тут защита работает), плюс блокировку кика и журнал,
---   дающий шанс заметить кражу и успеть отменить трейд.
---   Что НЕ закрывает: сам факт передачи предметов внутри игры.
---   Поэтому главное правило не отменяется: не запускать скрипты из
---   случайных источников, особенно на игры с ценным инвентарём.
+--  ANTI IP LOGGER + ANTI STEALER  |  v2.1.8  "Pickle Rick Edition"
 -- ═══════════════════════════════════════════════════════════════════════
 --
---  Что НЕ исправлено и не может быть исправлено в такой архитектуре —
---  это не баги, а фундаментальные границы возможностей ЛОКАЛЬНОГО скрипта:
---   - Anti-kick блокирует только вызовы Kick() со стороны Lua/loadstring.
---     Серверный кик (сама игра выгоняет игрока) заблокировать НЕЛЬЗЯ —
---     это решение сервера, локальный хук на него не влияет.
---   - sanitizeBody подчищает уже ПОЛУЧЕННЫЙ ответ. Если вредный скрипт
---     успел ОТПРАВИТЬ настоящий IP на сервер до блокировки — заменить
---     то, что уже ушло, невозможно.
---   - Redirect-цепочки, WebSocket-содержимое кроме cookie-сигнатуры,
---     сильно обфусцированный/динамически собранный код и альтернативные
---     сетевые API, которых executor не предоставляет через стандартные
---     функции — всё это может обойти фильтр. Полной гарантии не даёт ни
---     один локальный anti-logger, это ограничение подхода, а не версии.
+--  WHAT IT DOES
+--   • ANTI IP LOGGER  - blocks requests to known IP-logger / grabber /
+--     geolocation domains, and scrubs IP addresses out of responses.
+--   • ANTI STEALER    - cookie guard, loadstring source scan, blocks
+--     exfiltration to Discord webhooks and to relay endpoints.
+--   • ANTI KICK       - blocks Player:Kick() and tells you to check your
+--     inventory (stealers kick right after they take your items).
+--   • ANTI ABUSE      - blocks scripts from calling ReportAbuse on you,
+--     and from opening Robux purchase prompts you did not ask for.
+--   • ANTI-AFK        - keeps you from being disconnected for idling.
+--
+--  QUICK START
+--     loadstring(game:HttpGet("YOUR_URL_HERE"))()
+--
+--  CONFIGURATION (set these BEFORE loading the script)
+--     getgenv()._whitelist = { "mysite.com" }   -- never block these
+--     getgenv()._strict_webhook = true          -- block ALL webhooks
+--     getgenv()._anti_afk = false               -- disable anti-afk
+--     getgenv()._log_blocks = false             -- silence the console
+--     -- full list of flags is in SECTION 1 below
+--
+--  UNLOADING
+--     getgenv().AntiLoggerUnload()
+--     Disables every check. Rejoin to fully remove installed hooks.
+--
+-- ═══════════════════════════════════════════════════════════════════════
+--  WHAT THIS PROTECTS AGAINST - AND WHAT IT DOES NOT
+-- ═══════════════════════════════════════════════════════════════════════
+--  Read this before trusting it with a valuable account.
+--
+--  IT PROTECTS the network layer. Cookie theft, auth-token theft, IP
+--  leaks, HWID leaks, webhook exfiltration - these travel over HTTP, and
+--  HTTP is what this script controls.
+--
+--  IT DOES NOT PROTECT against in-game item theft, and no script can do
+--  that generically. Item theft happens through the game's own
+--  RemoteEvents - the exact same ones you use for a real trade. A call
+--  saying "give item X to player Y" looks identical whether you meant it
+--  or a stealer sent it. Telling them apart would require knowing every
+--  individual game's logic.
+--
+--  OTHER KNOWN LIMITS:
+--   • Domain blocking mostly stops already-known scripts. A fresh relay
+--     domain takes a minute to set up.
+--   • Anti-bypass is deliberately absent (it crashed Android clients),
+--     so a script loaded AFTER this one can re-hook and disable it.
+--   • Actors (parallel Luau) run in separate Lua states where these
+--     hooks do not apply. The script warns you when it detects them.
+--
+--  Bottom line: this lowers your risk, it does not remove it. The rule
+--  that actually keeps accounts safe is still "do not run scripts from
+--  sources you do not trust."
+--
+-- ═══════════════════════════════════════════════════════════════════════
+--  CHANGELOG
+-- ═══════════════════════════════════════════════════════════════════════
+--  v2.1.8
+--   • All user-facing output is now English, and the "[AntiLogger]"
+--     prefix was dropped.
+--   • Console noise cut down: the kick report was a multi-line box that
+--     replayed the whole log on every kick; it is now one line with the
+--     last blocked action. The Actor warning went from 8 lines to 1.
+--   • Added Anti-AFK via VirtualUser (getgenv()._anti_afk).
+--   • Added getgenv().AntiLoggerUnload() to shut the script down.
+--
+--  v2.1.7
+--   • Internal primitives (string.find, pcall, pairs...) are now taken
+--     via clonefunction. Plain assignment did NOT protect them:
+--     hookfunction patches functions in place, so a stealer loaded
+--     BEFORE this script could hook string.find and silently disable all
+--     detection - no errors, we would just report "clean" while data
+--     leaked. Technique borrowed from HttpSpy.
+--   • Added monitoring of game:GetObjects(), which was a completely
+--     unwatched network path: it fetches assets by URL and on some
+--     executors accepts plain http(s) addresses.
+--   • Added Actor detection warning (see limits above).
+--
+--  v2.1.6 - false positive cleanup
+--   • BLACKLIST no longer does bare substring matching on hosts.
+--     "ipdata" was matching chipdatabase.com, "ipinfo" matched
+--     shipinfo.com, "ipstack" matched shipstack.com - all legitimate
+--     domains were being blocked. Matching now respects domain label
+--     boundaries.
+--   • Removed the "rap" field from sensitive-body detection and
+--     rewrote the matcher. It searched raw body text, so "rap" matched
+--     inside "wrapped" - a harmless webhook posting
+--     {"event":"round wrapped up"} was blocked as a data leak. Matching
+--     now only looks at FIELD NAMES, never at values.
+--   • IPv4 octets are now range-checked, and version/build fields are
+--     protected so "2.0.14.7" stays a version instead of becoming a
+--     fake IP.
+--   • IPv6 scrubbing was broken: the old pattern required 8 full groups,
+--     so real addresses in shortened form ("2001:db8::1") were never
+--     scrubbed at all. Now handles "::" form.
+--   • Relay hosts are checked on GET too - exfiltration via query string
+--     used to pass straight through.
+--
+--  v2.1.5
+--   • Fixed false positives in games like "Steal a Brainrot": words in
+--     the game's own title are no longer treated as evidence. Hard
+--     signatures (cookie, authticket) are never suppressed this way.
+--   • Webhooks are judged by CONTENT, not just destination. Plenty of
+--     legitimate scripts post scores and stats to their own Discord;
+--     blocking all of them was wrong. Now cookie/token/inventory = block,
+--     score/time/level = allow. Use _strict_webhook to block everything.
+--   • Added kick forensics and the Pickle Rick notification icon.
+--
+--  v2.1.4
+--   • Closed the main hole: webhook relays. None of the analysed stealer
+--     samples posted to discord.com directly - they all posted to their
+--     own relay on free hosting (onrender.com, vercel.app), which then
+--     forwarded to Discord. Those POSTs are now blocked.
+--   • Added blocking of bare IPv4 endpoints (no domain to blacklist).
+--
+--  v2.1.3
+--   • Added 242 exact domains from the curated part of Piperun's
+--     IP-Logger Filter.
+--
+--  v2.1.2
+--   • Fixed Robux prompt blocking, which blocked ALL purchases in ALL
+--     games. Games legitimately call PromptPurchase from their own
+--     LocalScripts when you click "buy"; checkcaller() returns false for
+--     those. Now only non-game-script callers are blocked.
+--   • sanitizeBody no longer rewrites responses from whitelisted hosts.
+--
+--  v2.1.1
+--   • Removed anti-bypass entirely. It caused a hard client crash
+--     (SIGSEGV) on Android: hooking hookfunction with hookfunction sends
+--     some executors into native-level infinite recursion that pcall
+--     cannot catch. If you are on v2.1.0, replace it.
+--
+-- ═══════════════════════════════════════════════════════════════════════
+--  ARCHITECTURAL LIMITS (not bugs - inherent to any local script)
+-- ═══════════════════════════════════════════════════════════════════════
+--   • Anti-kick only blocks Kick() calls made from Lua. A server-side
+--     kick (the game itself removing you) cannot be blocked - that is the
+--     server's decision and a local hook has no say in it.
+--   • sanitizeBody scrubs responses that have already ARRIVED. If a
+--     malicious script managed to SEND your real IP before being blocked,
+--     what already left cannot be recalled.
+--   • Redirect chains, WebSocket payloads beyond the cookie signature,
+--     heavily obfuscated or dynamically assembled code, and network APIs
+--     the executor does not expose through standard functions can all
+--     slip past the filter. No local anti-logger gives a full guarantee;
+--     this is a limit of the approach, not of this version.
 -- ═══════════════════════════════════════════════════════════════════════
 
 -- ═══════════════════════════════════════════════════════════════════════
---  РАЗДЕЛ 0 — GUARD ОТ ПОВТОРНОГО ЗАПУСКА
+--  SECTION 0 — RE-EXECUTION GUARD
 -- ═══════════════════════════════════════════════════════════════════════
 if getgenv().__AntiLoggerUnifiedLoaded then
-    warn("[AntiLogger] Уже загружен, повторный запуск пропущен (во избежание наслоения хуков).")
+    warn("Already loaded; skipping re-execution to avoid stacking hooks.")
     return
 end
 getgenv().__AntiLoggerUnifiedLoaded = true
 
 -- ═══════════════════════════════════════════════════════════════════════
---  РАЗДЕЛ 1 — НАСТРОЙКИ
+--  SECTION 1 — SETTINGS
 -- ═══════════════════════════════════════════════════════════════════════
 getgenv()._blockwebhook = true
 getgenv()._sanitize_ip = true
@@ -181,7 +168,7 @@ getgenv()._anti_kick = true
 getgenv()._scan_loadstring = true
 getgenv()._verbose_soft_warnings = false
 
--- v2.1.0: новые переключатели
+-- v2.1.0 toggles
 getgenv()._anti_reportabuse = true
 getgenv()._anti_robux_prompt = true
 
@@ -226,6 +213,23 @@ getgenv()._game_context_aware = true
 -- перед этим. Стилеры часто кикают сразу после кражи, чтобы жертва
 -- не увидела пропажу и не успела отменить трейд.
 getgenv()._kick_forensics = true
+--
+-- _warn_actor_risk — предупреждать, если в игре есть Actor'ы
+-- (параллельный Luau). У Actor'ов свой Lua-стейт, наши хуки на них не
+-- действуют, и скрипт внутри Actor'а может обойти защиту целиком.
+-- Закрыть это без переписывания под actor-архитектуру нельзя, поэтому
+-- хотя бы честно предупреждаем.
+getgenv()._warn_actor_risk = true
+
+-- v2.1.8: Anti-AFK. Keeps Roblox from disconnecting you for inactivity
+-- by simulating a tiny input whenever the client reports you as idle.
+-- Uses the standard VirtualUser approach.
+--
+-- Why this belongs in a security script: the 20-minute idle kick is one
+-- of the moments people get logged out mid-session and then blindly
+-- re-run whatever script they had loaded. Staying connected means fewer
+-- reloads of untrusted code. It is also just convenient.
+getgenv()._anti_afk = true
 
 -- Иконка уведомлений: Огурчик Рик
 getgenv()._icon_asset = getgenv()._icon_asset or "rbxassetid://83768500686029"
@@ -249,8 +253,53 @@ local TweenService = game:GetService("TweenService")
 local CoreGui = game:GetService("CoreGui")
 local Market = game:GetService("MarketplaceService")
 
-local sfind, slower, smatch, gsub = string.find, string.lower, string.match, string.gsub
-local rnd = math.random
+-- ═══════════════════════════════════════════════════════════════════════
+--  v2.1.7 — ЗАЩИТА СОБСТВЕННЫХ ПРИМИТИВОВ (приём взят из HttpSpy)
+-- ═══════════════════════════════════════════════════════════════════════
+-- ПРОБЛЕМА, которую это закрывает:
+-- Раньше здесь было простое присваивание:
+--     local sfind = string.find
+-- Кажется, что взятие ссылки защищает. НЕ ЗАЩИЩАЕТ. hookfunction
+-- патчит саму функцию НА МЕСТЕ, поэтому сохранённая ссылка указывает
+-- на уже подменённую версию.
+--
+-- Что это значит на практике: если стилер запустился РАНЬШЕ нас и
+-- сделал hookfunction(string.find, ...), заставив её врать на нужных
+-- ему строках, — вся наша система обнаружения тихо перестаёт работать.
+-- Никаких ошибок, просто isBlocked всегда возвращает false. Мы
+-- показываем «всё чисто», пока данные утекают.
+--
+-- clonefunction создаёт НЕЗАВИСИМУЮ копию, на которую чужие хуки уже
+-- не действуют. Именно поэтому HttpSpy оборачивает в clonefunction
+-- вообще всё, что использует внутри.
+--
+-- Честная граница: если стилер запустился раньше нас, он мог захукать
+-- и сам clonefunction. Полной гарантии тут быть не может — но это
+-- поднимает планку с «тривиально обходится» до «нужно целиться
+-- именно в нас».
+local function safeClone(fn, fallback)
+    if type(clonefunction) == "function" and type(fn) == "function" then
+        local ok, cloned = pcall(clonefunction, fn)
+        if ok and type(cloned) == "function" then
+            return cloned
+        end
+    end
+    return fallback or fn
+end
+
+local sfind  = safeClone(string.find)
+local slower = safeClone(string.lower)
+local smatch = safeClone(string.match)
+local gsub   = safeClone(string.gsub)
+local rnd    = safeClone(math.random)
+
+-- Эти тоже критичны: на них держится вся логика проверок.
+local _pcall   = safeClone(pcall)
+local _pairs   = safeClone(pairs)
+local _ipairs  = safeClone(ipairs)
+local _type    = safeClone(type)
+local _tostring = safeClone(tostring)
+local _warn    = safeClone(warn)
 
 local COOKIE_SIG = "warning:-do-not-share-this."
 
@@ -358,6 +407,26 @@ local BLACKLIST = {
 }
 
 local SuspiciousTLDs = { "tk", "ml", "ga", "cf", "gq" }
+
+-- v2.1.6: ключи, которые достаточно специфичны, чтобы искать их ВНУТРИ
+-- одной метки домена (ловит зеркала вида "iplogger-mirror.net",
+-- "grabify2.xyz"). Сюда попадают только строки, которые не встречаются
+-- как случайная подстрока обычных английских слов.
+--
+-- Специально НЕ включены короткие/общие фрагменты, из-за которых раньше
+-- блокировались легитимные домены:
+--   "ipdata"/"ipinfo"/"ipstack"/"ipapi"/"apiip"/"ipwho" — ловились в
+--     chipdatabase.com, shipinfo.com, shipstack.com, worshipapi.com;
+--   "radar"/"geocode"/"findip"/"ipscore"/"viewdns" — слишком общие слова.
+-- Все они по-прежнему блокируются как ТОЧНЫЕ домены через BLACKLIST выше
+-- (ipdata.co, ipinfo.io, ipstack.com и т.д. никуда не делись) — потеряна
+-- только ловля их произвольных зеркал, что дешевле ложных блоков.
+local BLACKLIST_LABEL_SUBSTRING = {
+    "grabify", "iplogger", "ip-logger", "spylogger", "ipgrabber", "ipgraber",
+    "iploggger", "blasze", "canarytoken", "webhook-test", "requestbin",
+    "beeceptor", "requestcatcher", "hookbin", "pipedream", "webhook.site",
+    "egorikusa", "darkscripts", "globalcheats", "roware",
+}
 
 -- Точные домены известных IP-логгеров/шортенеров/буттеров, взятые из
 -- публичного фильтр-листа Piperun's IP-Logger Filter (github.com/piperun/
@@ -684,18 +753,25 @@ local KnownExfilHosts = {
 -- шлёт в свой Discord рекорды, статистику фарма, «скрипт запущен» и т.п.
 -- Отличается не адрес, а СОДЕРЖИМОЕ: рекорд — это счёт и время, а кража —
 -- это cookie, токен авторизации или опись твоего инвентаря.
+-- v2.1.6 (пункт 2 багрепорта): УБРАНО поле "rap".
+-- Оно искалось как подстрока по всему телу, а "rap" ⊂ "wrapped",
+-- "wrapper", "trap", "scrap", "grape". Живой ложняк:
+--   {"event":"round wrapped up","score":120}
+-- содержит "wrapped" → содержит "rap" → безобидный статус-webhook
+-- блокировался как утечка. Специфичные "totalrap"/"limiteds"/"networth"
+-- остались — они не встречаются в обычных словах.
 local SensitiveBodyFields = {
     -- авторизация / захват аккаунта — это всегда красная линия
     "roblosec" .. "urity", "getauthticket", "authticket", "auth_ticket",
     ".robloxsecurity", "securitytoken", "x-csrf-token", "csrftoken",
     "cookie", "cookies", "sessionid", "session_id", "refreshtoken",
-    "accesstoken", "access_token", "bearer ",
+    "accesstoken", "access_token",
     -- идентификаторы устройства/сессии, по которым тебя связывают между акками
     "clientid", "client_id", "sessionlogid", "playsessionid",
     "hwid", "hardwareid", "machineid", "identityhash",
     -- опись имущества: типичная «витрина» стилера перед кражей
     "inventory", "backpack_items", "iteminventory", "ownedgamepasses",
-    "collectibles", "limiteds", "rap", "totalrap", "networth",
+    "collectibles", "limiteds", "totalrap", "networth",
 }
 
 -- Поля, характерные для БЕЗОБИДНЫХ webhook'ов (рекорды, лидерборды,
@@ -708,25 +784,61 @@ local BenignBodyFields = {
     "version", "status", "started", "finished", "completed",
 }
 
+-- v2.1.6 (пункт 2 багрепорта): РАНЬШЕ здесь был sfind по сырому телу —
+-- принципиально хрупкий подход для JSON. Теперь ищем совпадения только
+-- среди ИМЁН ПОЛЕЙ, а не в произвольном тексте:
+--   • JSON-ключи:      "field":
+--   • form-urlencoded: field=  /  &field=
+-- Значения полей (там и живёт обычный человеческий текст вроде
+-- "round wrapped up") больше не участвуют в проверке вообще.
 local function countFieldHits(bodyStr, fields)
-    if type(bodyStr) ~= "string" or bodyStr == "" then return 0 end
+    if type(bodyStr) ~= "string" or bodyStr == "" then return 0, nil end
     local bl = bodyStr:lower()
-    local hits = 0
+
+    -- Собираем множество имён полей, реально присутствующих в теле.
+    local presentKeys = {}
+    -- JSON:  "key" :
+    for k in bl:gmatch('"([^"]+)"%s*:') do
+        presentKeys[k] = true
+    end
+    -- form-urlencoded:  key=  (в начале тела или после & / ?)
+    for k in bl:gmatch('[&%?]([%w_%-%.]+)=') do
+        presentKeys[k] = true
+    end
+    for k in bl:gmatch('^([%w_%-%.]+)=') do
+        presentKeys[k] = true
+    end
+
+    local hits, firstHit = 0, nil
     for _, f in ipairs(fields) do
-        if sfind(bl, f, 1, true) then
+        -- точное совпадение имени поля
+        if presentKeys[f] then
             hits = hits + 1
+            firstHit = firstHit or f
+        else
+            -- либо имя поля содержит искомое как часть (userCookie,
+            -- robloxSecurityToken и т.п.) — но проверяем ТОЛЬКО имена
+            -- полей, не значения.
+            for k in pairs(presentKeys) do
+                if sfind(k, f, 1, true) then
+                    hits = hits + 1
+                    firstHit = firstHit or f
+                    break
+                end
+            end
         end
     end
-    return hits
+    return hits, firstHit
 end
 
 -- Решение по webhook'у: блокировать только если в теле есть чувствительные
 -- данные. Пустое тело/рекорд/статистика — пропускаем.
 -- Возвращает: shouldBlock (bool), reason (string|nil)
 local function webhookBodyVerdict(bodyStr)
-    local sensitive = countFieldHits(bodyStr, SensitiveBodyFields)
+    local sensitive, which = countFieldHits(bodyStr, SensitiveBodyFields)
     if sensitive > 0 then
-        return true, "утечка чувствительных полей (" .. sensitive .. ")"
+        return true, "чувствительное поле в теле: \"" .. tostring(which) ..
+                     "\" (всего совпадений: " .. sensitive .. ")"
     end
     -- Тело есть, но чувствительного в нём нет — это, скорее всего,
     -- обычный рекорд/уведомление. Пропускаем.
@@ -771,7 +883,16 @@ local CodeBlacklistSoft = {
     "stealer", "stolen", "ratt", "all your items", "linkingservice",
     "grabify", "iplogger", "ipify", "canihazip", "checkip", "externalip",
     "tobi's", "myip", "ipconfig", "trade", "mailbox",
-    "discordid", "usernames = {", "usernames = ",
+    "discordid",
+    -- v2.1.6 (пункт 3 багрепорта): было две записи, "usernames = {" и
+    -- "usernames = ". Вторая — надмножество первой, то есть первая
+    -- никогда не срабатывала уникально. При этом голое "usernames = "
+    -- ловит любое объявление таблицы с таким именем, включая обычные
+    -- списки админов в whitelist-скриптах:
+    --     local usernames = { "Player1", "Player2" }
+    -- Оставлена одна запись, суженная до паттерна, который характерен
+    -- именно для сбора данных ПО ВСЕМ игрокам сервера.
+    "getplayers()) do", "for _, plr in pairs(game.players",
     "discord.com/api/webhooks", "discordapp.com/api/webhooks",
 }
 
@@ -850,8 +971,8 @@ do
         if next(GameContextWords) ~= nil and getgenv()._log_blocks then
             local list = {}
             for w in pairs(GameContextWords) do list[#list + 1] = w end
-            warn("[AntiLogger] Контекст игры «" .. name .. "»: слова {" ..
-                 table.concat(list, ", ") .. "} не считаются уликой в этой игре.")
+            warn(("Game context \"%s\": the words {%s} are not treated as evidence in this game.")
+                 :format(name, table.concat(list, ", ")))
         end
     end)
     if not ok then GameContextWords = {} end
@@ -890,7 +1011,7 @@ local function downloadImage(url)
     if isBlocked and type(isBlocked) == "function" then
         local blocked = isBlocked(url, nil, nil, false)
         if blocked then
-            warn("[AntiLogger] downloadImage: URL заблокирован фильтром, иконка не загружена: " .. tostring(url))
+            warn("downloadImage: URL blocked by filter, icon not loaded: " .. tostring(url))
             return nil
         end
     end
@@ -1368,20 +1489,46 @@ isBlocked = function(url, body, headers, isPost)
     end
 
     -- v2.1.4: POST на бесплатные хостинг-платформы — типичный webhook-релей.
-    if getgenv()._block_relay_hosts and isPost then
+    -- v2.1.6 (пункт 6 багрепорта): РАНЬШЕ проверка стояла под "and isPost",
+    -- поэтому эксфильтрация через GET с данными в query string
+    -- (host/path?cookie=...) проходила мимо полностью. Теперь принадлежность
+    -- к релей-хосту определяется отдельно от метода запроса.
+    if getgenv()._block_relay_hosts then
+        local isRelayHost = false
         for _, suffix in ipairs(RelayHostSuffixes) do
             if host == suffix or host:sub(-(#suffix + 1)) == "." .. suffix then
-                -- v2.1.5: та же логика, что и для webhook'ов. Свой API
-                -- на Vercel — не преступление; преступление — слать туда
-                -- cookie или опись инвентаря.
-                local shouldBlock, why = webhookBodyVerdict(body)
-                if shouldBlock then
-                    lastWebhookReason = why
-                    return true, "RELAY"
+                isRelayHost = true
+                break
+            end
+        end
+
+        if isRelayHost then
+            -- v2.1.5: свой API на Vercel — не преступление; преступление —
+            -- слать туда cookie или опись инвентаря.
+            -- v2.1.6 (пункт 7): передаём УЖЕ декодированное тело (bl),
+            -- а не сырое — иначе url-encoded поля ("session%5Fid")
+            -- не распознавались. bl посчитан выше в этой же функции.
+            local shouldBlock, why = webhookBodyVerdict(bl)
+
+            -- Для GET тела нет — данные уезжают в query string.
+            -- Сканируем её теми же критериями.
+            if not shouldBlock and not isPost then
+                local qs = pl:match("%?(.*)$")
+                if qs then
+                    shouldBlock, why = webhookBodyVerdict(qs)
+                    if shouldBlock then
+                        why = "GET query string → " .. tostring(why)
+                    end
                 end
-                if getgenv()._verbose_soft_warnings then
-                    warn("[AntiLogger] Пропущен POST на релей-платформу без чувствительных данных: " .. tostring(host))
-                end
+            end
+
+            if shouldBlock then
+                lastWebhookReason = why
+                return true, "RELAY"
+            end
+            if getgenv()._verbose_soft_warnings then
+                warn(("Allowed request to relay platform (no sensitive data): %s (%s)")
+                     :format(tostring(host), isPost and "POST" or "GET"))
             end
         end
     end
@@ -1400,7 +1547,8 @@ isBlocked = function(url, body, headers, isPost)
                     -- Строгий режим для тех, кому спокойнее блокировать всё.
                     return true, "WEBHOOK"
                 end
-                local shouldBlock, why = webhookBodyVerdict(body)
+                -- v2.1.6 (пункт 7): декодированное тело вместо сырого.
+                local shouldBlock, why = webhookBodyVerdict(bl)
                 if shouldBlock then
                     lastWebhookReason = why
                     return true, "WEBHOOK"
@@ -1408,15 +1556,54 @@ isBlocked = function(url, body, headers, isPost)
                 -- Пропускаем, но отмечаем в консоли — пусть пользователь
                 -- знает, что скрипт куда-то пишет, даже если безобидно.
                 if getgenv()._verbose_soft_warnings then
-                    warn("[AntiLogger] Пропущен webhook без чувствительных данных: " .. tostring(host))
+                    warn("Allowed webhook (no sensitive data): " .. tostring(host))
                 end
             end
         end
     end
 
+    -- v2.1.6 (пункт 1 багрепорта): РАНЬШЕ здесь третьим условием стоял
+    -- голый sfind(host, p, 1, true) — поиск подстроки где угодно в хосте,
+    -- без привязки к границам поддомена. Это давало реальные коллизии с
+    -- обычными словами внутри легитимных доменов:
+    --   "ipdata"  ⊂ "chipdatabase.com"
+    --   "ipinfo"  ⊂ "shipinfo.com"
+    --   "ipstack" ⊂ "shipstack.com"
+    --   "ipapi"   ⊂ "shipapi.com" / "worshipapi.com"
+    -- Теперь совпадение возможно тремя способами, и все они уважают
+    -- границы меток домена:
+    --   1) хост равен ключу целиком;
+    --   2) ключ — суффикс хоста ровно по границе точки;
+    --   3) ключ равен ЦЕЛОЙ метке хоста — это важно для ключей,
+    --      записанных без домена ("ipdata", "ipinfo", "ipstack"):
+    --      "ipdata.co" и "api.ipdata.co" ловятся (метка == "ipdata"),
+    --      а "chipdatabase.com" уже нет (метка "chipdatabase" ≠ "ipdata").
+    local hostLabels = {}
+    for label in host:gmatch("[^%.]+") do
+        hostLabels[#hostLabels + 1] = label
+    end
+
     for _, p in ipairs(BLACKLIST) do
-        if host == p or host:sub(-(#p + 1)) == "." .. p or sfind(host, p, 1, true) then
+        if host == p or host:sub(-(#p + 1)) == "." .. p then
             return true, "LOGGER"
+        end
+        for _, label in ipairs(hostLabels) do
+            if label == p then
+                return true, "LOGGER"
+            end
+        end
+    end
+
+    -- Отдельно — ключи, для которых совпадение внутри ОДНОЙ метки домена
+    -- всё-таки осмысленно (например "iplogger" в "iplogger-mirror.net").
+    -- Сюда попадают только достаточно длинные и специфичные строки,
+    -- которые не встречаются в обычных английских словах. Проверка идёт
+    -- по каждой метке отдельно, поэтому "shipinfo.com" больше не ловится.
+    for _, label in ipairs(hostLabels) do
+        for _, p in ipairs(BLACKLIST_LABEL_SUBSTRING) do
+            if sfind(label, p, 1, true) then
+                return true, "LOGGER"
+            end
         end
     end
 
@@ -1448,9 +1635,104 @@ local function sanitizeBody(bodyStr, host)
     -- в игре и т.п.), которые совпадают с шаблоном "N.N.N.N", но не
     -- являются IP-адресом и пришли не от подозрительного источника.
     if host and isWhitelisted(host) then return bodyStr end
+
     local ipv4, ipv6 = fakeIPv4(), fakeIPv6()
-    local out = bodyStr:gsub("%d+%.%d+%.%d+%.%d+", ipv4)
-    out = out:gsub("%x+:%x+:%x+:%x+:%x+:%x+:%x+:%x+", ipv6)
+
+    -- v2.1.6 (пункт 4б багрепорта): "2.0.14.7" по форме неотличим от IP —
+    -- все октеты в диапазоне 0–255. Отличить можно только по КОНТЕКСТУ:
+    -- если значение лежит под ключом вроде "version"/"build"/"sdk", это
+    -- версия, а не адрес. Поэтому перед заменой прячем такие значения за
+    -- временные плейсхолдеры, а после замены возвращаем как было.
+    local VersionKeys = {
+        "version", "ver", "build", "buildnumber", "build_number",
+        "sdk", "sdkversion", "revision", "rev", "release",
+        "clientversion", "client_version", "appversion", "app_version",
+        "gameversion", "game_version", "placeversion", "schema",
+    }
+    local stash, stashN = {}, 0
+    local work = bodyStr
+
+    for _, key in ipairs(VersionKeys) do
+        -- JSON:  "version": "2.0.14.7"   и   "version":"2.0.14.7"
+        work = work:gsub('("' .. key .. '"%s*:%s*")([^"]*)(")', function(pre, val, post)
+            if val:match("^[%d%.]+$") then
+                stashN = stashN + 1
+                -- Токен намеренно состоит только из букв и цифр: тогда он
+                -- не содержит магических символов Lua-паттернов и его можно
+                -- вернуть обратно обычным gsub без экранирования.
+                local token = "VERSTASHTOKEN" .. stashN .. "ENDSTASH"
+                stash[token] = val
+                return pre .. token .. post
+            end
+            return pre .. val .. post
+        end)
+    end
+
+    -- v2.1.6 (пункт 4 багрепорта): раньше подменялась ЛЮБАЯ
+    -- последовательность "число.число.число.число", включая заведомо
+    -- не-IP вроде "999.999.999.999". Теперь каждый октет валидируется
+    -- по диапазону 0–255, и подмена происходит только если это
+    -- действительно похоже на IPv4.
+    local out = work:gsub("(%d+)%.(%d+)%.(%d+)%.(%d+)", function(a, b, c, d)
+        for _, oct in ipairs({ a, b, c, d }) do
+            if #oct > 3 then return nil end
+            local n = tonumber(oct)
+            if not n or n > 255 then return nil end
+        end
+        return ipv4
+    end)
+
+    -- v2.1.6 (пункт 5 багрепорта): старый паттерн
+    --   "%x+:%x+:%x+:%x+:%x+:%x+:%x+:%x+"
+    -- имел два независимых бага.
+    --   а) Не ловил сокращённую форму с "::" — то есть реальные адреса
+    --      вида "2001:db8::1" (а именно так IPv6 и пишется почти всегда)
+    --      НЕ санитизировались вообще. Ровно противоположно задуманному.
+    --   б) %x+ без ограничения длины группы ловил произвольные hex-строки
+    --      (GUID'ы, хэши, идентификаторы вида "dead:beef:cafe:babe:...").
+    -- Теперь: группа строго 1–4 hex-символа, поддержана "::"-форма,
+    -- и результат дополнительно проверяется на правдоподобность.
+    local function looksLikeIPv6(s)
+        -- ровно один "::" максимум
+        local dcount = select(2, s:gsub("::", ""))
+        if dcount > 1 then return false end
+        local groups, empty = 0, 0
+        for g in s:gmatch("[^:]*") do
+            if g == "" then
+                empty = empty + 1
+            else
+                if #g > 4 then return false end
+                groups = groups + 1
+            end
+        end
+        if dcount == 0 then
+            -- полная форма: ровно 8 групп
+            return groups == 8
+        end
+        -- сокращённая форма: групп меньше 8, иначе "::" бессмысленно
+        return groups >= 2 and groups < 8
+    end
+
+    -- Полная форма (8 групп по 1–4 hex)
+    out = out:gsub("%x%x?%x?%x?:%x%x?%x?%x?:%x%x?%x?%x?:%x%x?%x?%x?:%x%x?%x?%x?:%x%x?%x?%x?:%x%x?%x?%x?:%x%x?%x?%x?",
+        function(m)
+            if looksLikeIPv6(m) then return ipv6 end
+            return nil
+        end)
+
+    -- Сокращённая форма с "::" (например 2001:db8::1, fe80::1)
+    out = out:gsub("%x%x?%x?%x?::[%x:]*%x", function(m)
+        if looksLikeIPv6(m) then return ipv6 end
+        return nil
+    end)
+
+    -- Возвращаем спрятанные версии на место.
+    if stashN > 0 then
+        for token, val in pairs(stash) do
+            out = out:gsub(token, val)
+        end
+    end
+
     return out
 end
 
@@ -1498,7 +1780,8 @@ if getgenv()._scan_loadstring and hookfunction and type(loadstring) == "function
                     -- пропускаем это слово, ищем дальше
                 else
                     if getgenv()._verbose_soft_warnings then
-                        warn("[AntiLogger] Внимание: loadstring из \"" .. source .. "\" содержит подозрительное слово \"" .. word .. "\" — код НЕ заблокирован, только предупреждение.")
+                        warn(("Notice: loadstring from \"%s\" contains suspicious word \"%s\". Code was NOT blocked; this is a warning only.")
+                        :format(source, word))
                     end
                     break
                 end
@@ -1524,7 +1807,8 @@ if getgenv()._scan_loadstring and hookfunction and type(loadstring) == "function
                     return newcclosure(function() end)
                 else
                     if getgenv()._verbose_soft_warnings then
-                        warn("[AntiLogger] Внимание: loadstring из \"" .. source .. "\" содержит подозрительный паттерн \"" .. sig.label .. "\" — код НЕ заблокирован, только предупреждение.")
+                        warn(("Notice: loadstring from \"%s\" contains suspicious pattern \"%s\". Code was NOT blocked; this is a warning only.")
+                            :format(source, sig.label))
                     end
                 end
             end
@@ -1534,7 +1818,8 @@ if getgenv()._scan_loadstring and hookfunction and type(loadstring) == "function
             for _, marker in ipairs(ENV_INJECTION_MARKERS) do
                 if sfind(codeStr, marker, 1, true) then
                     if getgenv()._verbose_soft_warnings then
-                        warn("[AntiLogger] Внимание: loadstring из \"" .. source .. "\" содержит webhook + признак \"" .. marker .. "\" — код НЕ заблокирован, только предупреждение.")
+                        warn(("Notice: loadstring from \"%s\" contains a webhook plus marker \"%s\". Code was NOT blocked; this is a warning only.")
+                            :format(source, marker))
                     end
                     break
                 end
@@ -1567,6 +1852,25 @@ local namecallHookOk, namecallHookErr = pcall(function()
             return sanitizeBody(result, getHost(urlDecode(url)))
         end
         return result
+
+    -- v2.1.7: GetObjects — сетевой канал, который мы раньше не смотрели
+    -- вообще. HttpSpy его мониторит, и не зря: game:GetObjects() тянет
+    -- ассет по ссылке, и на части экзекьюторов принимает не только
+    -- rbxassetid://, но и обычный http(s)-адрес. То есть это способ
+    -- сходить в сеть в обход всех наших хуков на HttpGet/request.
+    -- Проверяем той же логикой, что и обычные запросы.
+    elseif method == "GetObjects" then
+        if type(url) == "string" and (sfind(url, "http://", 1, true) or sfind(url, "https://", 1, true)) then
+            local blocked, tag = isBlocked(url, nil, nil, false)
+            if blocked then
+                logBlock(tag, url)
+                return {}
+            end
+            if getgenv()._verbose_soft_warnings then
+                _warn("GetObjects called with an external URL: " .. _tostring(url))
+            end
+        end
+        return oldNamecall(self, ...)
 
     elseif method == "HttpPost" or method == "HttpPostAsync" or method == "PostAsync" then
         local blocked, tag = isBlocked(url, body, nil, true)
@@ -1616,13 +1920,68 @@ local namecallHookOk, namecallHookErr = pcall(function()
 end)
 
 if not namecallHookOk then
-    warn("[AntiLogger] КРИТИЧНО: не удалось установить __namecall хук (Раздел 10). Ошибка: " .. tostring(namecallHookErr))
+    warn("CRITICAL: failed to install the __namecall hook (Section 10). Error: " .. tostring(namecallHookErr))
 end
 
 -- ═══════════════════════════════════════════════════════════════════════
 --  АНТИ-КИК
 -- ═══════════════════════════════════════════════════════════════════════
 local kickHookTarget -- ссылка на нашу же __namecall-обёртку в анти-кике (не используется активно после удаления anti-bypass в v2.1.1, оставлена на случай будущих защитных фич)
+-- ═══════════════════════════════════════════════════════════════════════
+--  v2.1.7 — ПРЕДУПРЕЖДЕНИЕ ОБ ACTOR'АХ (параллельный Luau)
+-- ═══════════════════════════════════════════════════════════════════════
+-- Это НЕ защита, а честное предупреждение о дыре, которую мы закрыть
+-- не можем — но о которой пользователь должен знать.
+--
+-- В чём суть: Roblox умеет запускать скрипты внутри Actor-объектов
+-- (параллельный Luau). У каждого Actor'а СВОЙ отдельный Lua-стейт со
+-- своей копией метатаблиц. Наши хуки на game.__namecall и на request
+-- поставлены в основном стейте и на код внутри Actor'а НЕ действуют.
+--
+-- То есть скрипт, запущенный внутри Actor'а, может спокойно ходить в
+-- сеть мимо всей нашей защиты. Именно поэтому Sigma Spy не ставит хуки
+-- напрямую, а генерирует отдельный код и запускает его В КАЖДОМ Actor'е
+-- отдельно — это единственный рабочий способ покрыть их все.
+--
+-- Реализовать это здесь означало бы переписать половину скрипта под
+-- actor-архитектуру, и для мобильных экзекьюторов (где у тебя и так
+-- были краши) это лишний риск. Поэтому: обнаруживаем, что Actor'ы
+-- используются, и честно предупреждаем.
+local function checkActorEvasionRisk()
+    if not getgenv()._warn_actor_risk then return end
+
+    local ok = _pcall(function()
+        local hasActorSupport = (type(getactors) == "function")
+                             or (type(run_on_actor) == "function")
+                             or (type(create_comm_channel) == "function")
+
+        local actorCount = 0
+        if type(getactors) == "function" then
+            local ok2, actors = _pcall(getactors)
+            if ok2 and type(actors) == "table" then
+                actorCount = #actors
+            end
+        end
+
+        if actorCount > 0 then
+            -- v2.1.8: compressed from an 8-line box to one line.
+            _warn(("Warning: %d Actor(s) detected in this game. Actors run in "
+                .. "separate Lua states, so hooks do not apply inside them and a "
+                .. "script running in one can bypass this protection. Be extra "
+                .. "careful with scripts here.%s")
+                :format(actorCount,
+                    hasActorSupport and " (Your executor supports Actor access, so this vector is available here.)" or ""))
+        end
+    end)
+    return ok
+end
+
+task.spawn(function()
+    task.wait(3)   -- дать игре прогрузиться, Actor'ы появляются не сразу
+    _pcall(checkActorEvasionRisk)
+end)
+
+
 -- ═══════════════════════════════════════════════════════════════════════
 --  v2.1.5 — ЖУРНАЛ АКТИВНОСТИ ДЛЯ ФОРЕНЗИКИ КИКА
 -- ═══════════════════════════════════════════════════════════════════════
@@ -1656,16 +2015,23 @@ function logActivity(kind, detail)
 end
 
 local function dumpActivityLog()
-    if #activityLog == 0 then
-        warn("[AntiLogger] Журнал активности пуст — перед киком ничего подозрительного не зафиксировано.")
+    -- v2.1.8: was a multi-line box listing every logged entry, which
+    -- flooded the console with old records on every kick attempt.
+    -- Now it is a single compact line. The point of this feature is not
+    -- to produce a report: it is to tell you, in the two seconds you
+    -- have, that a kick was blocked and that you should check your
+    -- inventory before the thief's trade goes through.
+    local n = #activityLog
+    if n == 0 then
+        warn("Kick blocked. Nothing suspicious was recorded before it.")
         return
     end
-    warn("╔═══ ЧТО ПРОИСХОДИЛО ПЕРЕД КИКОМ ═══╗")
-    for _, e in ipairs(activityLog) do
-        warn("  [" .. e.t .. "] " .. e.kind .. " — " .. e.detail)
-    end
-    warn("╚═══════════════════════════════════╝")
-    warn("[AntiLogger] Кик заблокирован. ПРОВЕРЬ ИНВЕНТАРЬ И ВХОДЯЩИЕ ТРЕЙДЫ ПРЯМО СЕЙЧАС.")
+
+    -- Only the most recent entry matters — that is what happened right
+    -- before the kick.
+    local last = activityLog[n]
+    warn(("Kick blocked. CHECK YOUR INVENTORY AND PENDING TRADES NOW. Last blocked action: [%s] %s -> %s (%d recorded)")
+        :format(last.t, last.kind, last.detail, n))
 end
 
 if getgenv()._anti_kick then
@@ -1691,7 +2057,7 @@ if getgenv()._anti_kick then
     end)
 
     if not kickHookOk then
-        warn("[AntiLogger] Не удалось установить анти-кик хук. Ошибка: " .. tostring(kickHookErr))
+        warn("Failed to install the anti-kick hook. Error: " .. tostring(kickHookErr))
     end
 end
 
@@ -1802,7 +2168,7 @@ if getgenv()._anti_reportabuse and type(hookfunction) == "function" then
     if ok then
         protectedFunctions.ReportAbuse = { orig = origReportAbuse, wrapped = Players.ReportAbuse }
     else
-        warn("[AntiLogger] Не удалось захукать ReportAbuse: " .. tostring(origReportAbuse))
+        warn("Failed to hook ReportAbuse: " .. tostring(origReportAbuse))
     end
 end
 
@@ -1869,3 +2235,104 @@ end
 --  pcall не ловит и не может остановить. Выгода от этой защиты (блок
 --  попыток снять другие наши хуки) не стоит риска краша всего клиента.
 -- ═══════════════════════════════════════════════════════════════════════
+
+-- ═══════════════════════════════════════════════════════════════════════
+--  SECTION 15 — ANTI-AFK (v2.1.8)
+-- ═══════════════════════════════════════════════════════════════════════
+-- Roblox disconnects idle clients after ~20 minutes. VirtualUser is the
+-- standard way around it: when the client fires Players.LocalPlayer.Idled,
+-- we simulate a right-click at (0,0), which resets the idle timer without
+-- affecting gameplay (button 2 at the origin does nothing in practice).
+--
+-- Notes on the reference implementation this was adapted from — it had
+-- several issues worth avoiding:
+--   • It used the deprecated :connect() (lowercase) instead of :Connect().
+--   • It used wait()/spawn() instead of task.wait()/task.spawn().
+--   • Its timer loop was "while true do if flag then ... wait(1) end end" —
+--     when the flag was false the loop spun with NO yield at all, which
+--     freezes the client. A wait must be unconditional in any while-true.
+--   • It never disconnected anything, so re-running it stacked handlers.
+-- This version connects once, stores the connection, and exposes cleanup.
+if getgenv()._anti_afk then
+    local antiAfkOk, antiAfkErr = pcall(function()
+        local VirtualUser = game:GetService("VirtualUser")
+        local plr = game:GetService("Players").LocalPlayer
+
+        -- Drop any previous connection (safe re-execution).
+        if getgenv().__AntiAfkConnection then
+            pcall(function() getgenv().__AntiAfkConnection:Disconnect() end)
+            getgenv().__AntiAfkConnection = nil
+        end
+
+        getgenv().__AntiAfkConnection = plr.Idled:Connect(function()
+            -- Wrapped: on some executors VirtualUser is restricted and
+            -- throwing here would spam the console every idle cycle.
+            pcall(function()
+                VirtualUser:CaptureController()
+                VirtualUser:ClickButton2(Vector2.new())
+            end)
+        end)
+    end)
+
+    if not antiAfkOk then
+        warn("Anti-AFK could not be enabled: " .. tostring(antiAfkErr))
+    end
+end
+
+-- ═══════════════════════════════════════════════════════════════════════
+--  SECTION 16 — UNLOAD (v2.1.8)
+-- ═══════════════════════════════════════════════════════════════════════
+-- Lets the user shut the script down without rejoining. Hooks themselves
+-- cannot be fully reverted on most executors, but connections can be
+-- dropped and every feature flag can be turned off, which stops all
+-- blocking and logging behaviour.
+getgenv().AntiLoggerUnload = function()
+    local flags = {
+        "_blockwebhook", "_sanitize_ip", "_anti_kick", "_log_blocks",
+        "_anti_reportabuse", "_anti_robux_prompt", "_block_bare_ip",
+        "_block_relay_hosts", "_strict_webhook", "_game_context_aware",
+        "_kick_forensics", "_warn_actor_risk", "_anti_afk",
+        "_verbose_soft_warnings",
+    }
+    for _, f in ipairs(flags) do
+        getgenv()[f] = false
+    end
+
+    if getgenv().__AntiAfkConnection then
+        pcall(function() getgenv().__AntiAfkConnection:Disconnect() end)
+        getgenv().__AntiAfkConnection = nil
+    end
+
+    getgenv().__AntiLoggerUnifiedLoaded = nil
+    warn("Unloaded. All checks are now disabled. Rejoin to fully remove installed hooks.")
+end
+
+
+-- ═══════════════════════════════════════════════════════════════════════
+--  SECTION 17 — LOADING NOTIFICATIONS (v2.1.8)
+-- ═══════════════════════════════════════════════════════════════════════
+-- Two toasts on startup: "loaded" confirmation and a clickable Telegram
+-- card. The second one copies the contact to clipboard on click, so the
+-- channel stays reachable without the user having to retype anything.
+task.wait(1)
+
+NotifyToast({
+    title = "ANTI IP LOGGER + ANTI STEALER",
+    content = "Script loaded! ✓",
+    duration = 5,
+    icon = CONFIG.DEFAULT_ICON
+})
+
+task.wait(5)
+
+NotifyToast({
+    title = "My Telegram",
+    content = "Click to copy: t.me/AYBAT_ATAYBEK",
+    duration = 7,
+    icon = CONFIG.DEFAULT_ICON,
+    callback = function()
+        if setclipboard then
+            setclipboard("t.me/AYBAT_ATAYBEK")
+        end
+    end
+})
