@@ -462,7 +462,6 @@ local KnownExfilHosts = {
     ["proxykoyeb.onrender.com"] = true,
     ["rubix-scanner.vercel.app"] = true,
     ["proxy-plum-beta.vercel.app"] = true,
-    ["pastefy.app"] = true,
 }
 
 local SensitiveBodyFields = {
